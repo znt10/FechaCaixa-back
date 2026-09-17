@@ -27,10 +27,25 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 5s
+      # Pelo TCP, e nao pelo socket: na primeira subida o MySQL levanta um
+      # servidor temporario para criar o banco, e esse temporario JA responde
+      # no socket. Com "-h localhost" o compose dava o banco por pronto uns
+      # segundos antes de ele aceitar conexao de verdade, e a api ia bater em
+      # porta fechada. Medido: socket responde aos 7s, TCP so aos 10s.
+      #
+      # A senha vai na linha de comando porque ela ja esta no ambiente deste
+      # container (MYSQL_ROOT_PASSWORD), entao nao ha segredo novo exposto aqui
+      # — e $$ escapado depende de como o Coolify reescreve o arquivo, o que
+      # nao e coisa para descobrir em producao.
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${DB_PASSWORD}"]
+      interval: 10s
       timeout: 5s
-      retries: 20
+      retries: 12
+      # Criar o banco do zero passa dos 100s que as tentativas davam antes,
+      # quando o servidor esta ocupado — logo depois de um build, por exemplo.
+      # Dentro do start_period a falha nao gasta tentativa, e o primeiro
+      # sucesso encerra a espera na hora.
+      start_period: 180s
 
   api:
     build: .
