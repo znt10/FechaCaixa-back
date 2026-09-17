@@ -108,6 +108,33 @@ resolve do lado do front por padrão. Ou você usa o domínio público da API
    `Gerente` com um `Perfil de usuário` apontando para a conta dela.
 4. O código de acesso da empresa aparece para ela em `/empresa`.
 
+## Se o deploy falhar com "dependency db failed to start"
+
+Quer dizer que o MySQL nao passou no healthcheck dentro da janela. Na primeira
+subida ele cria o banco do zero, e num servidor ocupado — logo depois de um
+build, por exemplo — isso demora. O `start_period` de 180s cobre esse caso: ali
+dentro, tentativa que falha nao conta.
+
+Se estourar mesmo assim, o motivo esta no log do proprio container do banco, e
+nao no log do deploy. No Coolify, aba **Logs** do recurso, servico `db`. Pelo
+terminal do servidor:
+
+```bash
+docker logs $(docker ps -a --format '{{.Names}}' | grep '^db-' | head -1) | tail -40
+```
+
+Duas causas que aparecem por ali: disco cheio, e uma senha que chegou
+diferente do que esta no painel. Esta segunda vale olhar quando o log do deploy
+traz linhas como:
+
+```
+level=warning msg="The \"b\" variable is not set. Defaulting to a blank string."
+```
+
+E o Compose lendo um `$` dentro de um **valor** como se fosse variavel: uma
+senha `abc$bdef` chega no container como `abcdef`. Ou troque o valor por um sem
+`$`, ou escreva `$$` no lugar de cada `$`.
+
 ## Se o login responder 403 "Usuário sem grupo"
 
 Quer dizer que os grupos não foram criados no boot. Isso já foi silencioso — o
