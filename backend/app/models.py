@@ -787,7 +787,8 @@ class NotaFiscal(BaseModel):
     )
 
     # O XML inteiro, como veio. Fica no banco e nao em arquivo porque o disco
-    # do Railway e efemero — arquivo subido some no proximo deploy — e S3 seria
+    # do container e efemero — arquivo subido some no proximo deploy, ja que so
+    # o volume do MySQL sobrevive a ele — e S3 seria
     # infra, credencial e custo novos antes de saber se o modulo serve. Os
     # ~100 notas/mes referem-se ao grupo inteiro em 8 lojas: 1200 notas/ano x
     # ~45 KB ≈ 54 MB/ano. Se a volumetria fosse 100 por loja, seria ~430 MB/ano.

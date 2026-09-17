@@ -1,8 +1,8 @@
 """/healthz: a rota que o provedor consulta para saber se o servico esta vivo.
 
-Ela existe porque o healthcheck do Railway estava apontado para
-/api/v1/lojas/, que responde 401 sem login — o provedor le qualquer coisa fora
-da faixa 2xx como "servico doente" e derruba o deploy. O erro so apareceria no
+Ela existe porque o healthcheck estava apontado para /api/v1/lojas/, que
+responde 401 sem login — quem checa le qualquer coisa fora da faixa 2xx como
+"servico doente" e derruba o deploy. O erro so apareceria no
 primeiro deploy, com a aplicacao subindo e sendo morta em seguida.
 
 Ela consulta o banco de proposito: um processo que responde mas nao alcanca o
