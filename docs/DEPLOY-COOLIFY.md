@@ -1,7 +1,7 @@
 # Deploy no Coolify
 
-Dois recursos do tipo **Docker Compose**: um para este repositório (API, worker,
-beat, MySQL e Redis) e um para o repositório do front. O Coolify constrói pelo
+Dois recursos do tipo **Docker Compose**: um para este repositório (API e
+MySQL) e um para o repositório do front. O Coolify constrói pelo
 `Dockerfile` — o mesmo do desenvolvimento, então não existe uma imagem "de
 produção" que só existe lá e ninguém testa.
 
@@ -22,9 +22,15 @@ No projeto do Coolify: **+ New → Docker Compose** apontando para este reposit�
 | Docker Compose Location | `/docker-compose.prod.yml` |
 | Domínio | no serviço `api`, porta `8000` |
 
-Os serviços que sobem: `api`, `worker`, `beat`, `db` (MySQL 8) e `redis`. Os
-dois bancos ficam em volumes nomeados (`mysql_data`, `redis_data`) — o Coolify
-os preserva entre deploys.
+Os serviços que sobem são dois: `api` e `db` (MySQL 8), com o banco num volume
+nomeado (`mysql_data`) que o Coolify preserva entre deploys.
+
+Não há `worker`, `beat` nem Redis. O beat existia para uma tarefa agendada
+(`enviar_digest_lojas`) que saiu junto com o estoque na migration `0036`, e o
+worker não tinha mais nada para entregar além dela e de um e-mail. Esse e-mail
+— o de "esqueci a senha" — passa a sair dentro da própria requisição, por
+`CELERY_TASK_ALWAYS_EAGER`. Se um dia voltar a existir tarefa pesada o
+suficiente para não caber numa requisição, os três serviços voltam com ela.
 
 ### Variáveis (aba Environment Variables)
 
@@ -33,18 +39,21 @@ os preserva entre deploys.
 | `SECRET_KEY` | gere uma: `python -c "import secrets;print(secrets.token_urlsafe(50))"` |
 | `DB_PASSWORD` | senha do root do MySQL — inventada aqui, usada pelo `db` e pela `api` |
 | `DB_NAME` | opcional, padrão `fechacaixa` |
-| `ALLOWED_HOSTS` | `api.fechacaixa.io,api,127.0.0.1` |
+| `ALLOWED_HOSTS` | `api.fechacaixa.io,api` |
 | `CORS_ALLOWED_ORIGINS` | `https://fechacaixa.io` |
 | `CSRF_TRUSTED_ORIGINS` | `https://fechacaixa.io` |
 | `FRONTEND_URL` | `https://fechacaixa.io` |
 | `DJANGO_SUPERUSER_EMAIL` | e-mail do admin inicial |
 | `DJANGO_SUPERUSER_PASSWORD` | senha do admin inicial |
-| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | conta SMTP (sem elas, nenhum e-mail sai) |
+| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | conta SMTP (sem elas, nenhum e-mail sai — inclusive o de "esqueci a senha") |
 | `DEFAULT_FROM_EMAIL` | opcional |
 
-O banco e o Redis não têm variável de endereço: `DB_HOST=db` e
-`CELERY_BROKER_URL=redis://redis:6379/0` são fixos no compose, porque só fazem
-sentido dentro desta rede.
+O banco não tem variável de endereço: `DB_HOST=db` é fixo no compose, porque só
+faz sentido dentro desta rede.
+
+Se o painel ainda pedir `EVOLUTION_API_KEY` ou `EVOLUTION_POSTGRES_PASSWORD`,
+são sobras da versão anterior do compose guardadas pelo Coolify — o repositório
+não lê nenhuma das duas. Apague-as na própria aba.
 
 ### Sobre o ALLOWED_HOSTS
 
@@ -54,10 +63,13 @@ lista cobre um caminho de entrada:
 - **o domínio público da API** — como o proxy do Coolify entrega a requisição
   que veio da internet;
 - **`api`** — o nome do serviço na rede interna, usado quando o front fala com
-  o Django por dentro;
-- **`127.0.0.1`** — o healthcheck do compose. Sem ele o Django responde 400, o
-  container fica `unhealthy` e o deploy não termina, mesmo com a aplicação de
-  pé. O sintoma é cruel: funciona, e mesmo assim não sobe.
+  o Django por dentro.
+
+O healthcheck não precisa entrar nessa lista: o `docker/healthcheck.py` lê o
+próprio `ALLOWED_HOSTS` e manda o primeiro nome como `Host`, justamente para as
+duas pontas não poderem discordar. Antes ele batia com `Host: 127.0.0.1`, e
+quem não adivinhasse que precisava pôr esse valor aqui via o container ficar
+`Degraded` com a aplicação inteira funcionando.
 
 ## 2. Recurso do front
 

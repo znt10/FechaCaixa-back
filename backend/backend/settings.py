@@ -213,9 +213,17 @@ CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
-# Nos testes as tasks rodam sincronas, sem broker.
-CELERY_TASK_ALWAYS_EAGER = "test" in sys.argv
-CELERY_TASK_EAGER_PROPAGATES = True
+# Nos testes as tasks rodam sincronas, sem broker. Em producao tambem: nao ha
+# worker no deploy, e o unico .delay() vivo e o e-mail de "esqueci a senha" —
+# sem isto ele seria publicado num broker que ninguem escuta, e a pessoa que
+# perdeu a senha esperaria para sempre por um e-mail que nao sai.
+_rodando_testes = "test" in sys.argv
+CELERY_TASK_ALWAYS_EAGER = _rodando_testes or os.getenv(
+    "CELERY_TASK_ALWAYS_EAGER", ""
+).lower() in ("1", "true", "yes", "on")
+# So nos testes a falha sobe: em producao, um SMTP fora do ar derrubaria com
+# 500 a requisicao de quem so pediu o link — e a task ja loga o erro.
+CELERY_TASK_EAGER_PROPAGATES = _rodando_testes
 
 # ─── Email ────────────────────────────────────────────────────────────────────
 # Em DEBUG os emails vao para o console; em producao, SMTP via env. EMAIL_BACKEND
