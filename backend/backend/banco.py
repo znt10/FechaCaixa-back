@@ -1,6 +1,6 @@
 """Le a configuracao do banco a partir de uma URL unica.
 
-Todo provedor de deploy (Railway, Render, Fly, Heroku) entrega o banco assim,
+Todo provedor de deploy (Render, Fly, Heroku) entrega o banco assim,
 numa variavel so. Sem isto, a URL teria que ser picada a mao em seis variaveis
 no painel — e um erro de digitacao ali aparece la na frente como "nao conecta",
 longe da causa.

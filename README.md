@@ -159,7 +159,8 @@ e o resultado sai truncado ou com falhas que não existem.
 
 ## Deploy
 
-Ver [docs/DEPLOY-RAILWAY.md](docs/DEPLOY-RAILWAY.md).
+Coolify, pelo `docker-compose.prod.yml`. Ver
+[docs/DEPLOY-COOLIFY.md](docs/DEPLOY-COOLIFY.md).
 
 ## Histórico
 

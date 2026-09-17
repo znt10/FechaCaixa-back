@@ -144,8 +144,8 @@ USE_TZ = True
 STATIC_URL = "static/"
 # Com DEBUG=False o Django para de servir estatico, e o /admin sobe sem CSS —
 # parece quebrado, e nao esta. O WhiteNoise serve os arquivos do proprio
-# processo, que e o que faz sentido num provedor sem servidor de arquivos na
-# frente (Railway, Render, Fly).
+# processo, que e o que faz sentido num deploy sem servidor de arquivos na
+# frente: o proxy do Coolify so repassa o que o gunicorn responder.
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
@@ -208,20 +208,6 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "1.0.0",
 }
 
-# Token de servico do bot de WhatsApp (endpoints /api/v1/bot/).
-# Vazio = endpoints do bot desativados (nega tudo).
-BOT_SERVICE_TOKEN = os.getenv("BOT_SERVICE_TOKEN", "")
-
-# ─── Evolution API (bot de WhatsApp, self-hosted, nao-oficial) ───────────────
-# URL do container evolution-api (nao a do evolution-manager/UI). No Docker
-# Compose o docker-compose.yml sobrescreve para http://evolution-api:8080.
-EVOLUTION_API_URL = os.getenv("EVOLUTION_API_URL", "")
-EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "")
-EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE", "")
-# Segredo na URL do webhook (/api/v1/bot/webhook/<token>/). Sem ele, qualquer
-# um que descobrisse a rota conseguiria simular mensagem de qualquer loja.
-EVOLUTION_WEBHOOK_TOKEN = os.getenv("EVOLUTION_WEBHOOK_TOKEN", "")
-
 # ─── Celery / Redis ───────────────────────────────────────────────────────────
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
@@ -246,7 +232,8 @@ EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in ("1", "true", "yes
 DEFAULT_FROM_EMAIL = os.getenv(
     "DEFAULT_FROM_EMAIL", "FechaCaixa <no-reply@fechacaixa.local>"
 )
-# Timeout curto: no Railway a conexao SMTP tenta o IPv6 do Gmail primeiro, que
+# Timeout curto: dentro do container a conexao SMTP tenta o IPv6 do Gmail
+# primeiro, que
 # cai num buraco negro e so estoura no timeout padrao do TCP (~134s) antes de
 # cair pro IPv4. Com 10s a tentativa IPv6 desiste rapido e o fallback IPv4 envia.
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))

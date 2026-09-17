@@ -168,9 +168,9 @@ def healthz(request):
     """GET /healthz/ — o provedor perguntando se pode mandar trafego.
 
     Consulta o banco de proposito. Um processo que responde mas nao alcanca o
-    banco nao serve para nada, e e melhor o Railway saber disso e segurar o
-    deploy do que mandar a loja para uma aplicacao que vai falhar no primeiro
-    lancamento.
+    banco nao serve para nada, e e melhor o healthcheck do Coolify saber
+    disso e segurar o deploy do que mandar a loja para uma aplicacao que vai
+    falhar no primeiro lancamento.
 
     Nao diz nada sobre o sistema alem de "ok" ou "fora do ar": e uma rota
     aberta, e rota aberta que conta versao ou nome de host vira reconhecimento
