@@ -5,6 +5,11 @@
 # No Coolify, no recurso do tipo "Docker Compose":
 #   Docker Compose Location = /docker-compose.prod.yml
 #   Dominio no servico "api", porta 8000
+#
+# So api e db. Nao ha worker, beat nem Redis: o beat agendava
+# "enviar_digest_lojas", que saiu junto com o estoque na migration 0036 e nao
+# existe mais, e o worker so tinha esse agendamento e um e-mail para entregar.
+# O e-mail agora sai na propria requisicao (CELERY_TASK_ALWAYS_EAGER).
 # As variaveis com ${...} sao definidas na aba Environment Variables; o resto e
 # fixo porque so faz sentido dentro desta rede. Nenhum servico publica porta:
 # quem expoe a API e o proxy do Coolify.
@@ -27,12 +32,6 @@ services:
       timeout: 5s
       retries: 20
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    volumes:
-      - redis_data:/data
-
   api:
     build: .
     restart: unless-stopped
@@ -45,14 +44,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_started
     healthcheck:
-      # /healthz/ so responde 200 quando o banco responde. Feito com o proprio
-      # Python porque a imagem e a python:3.12-slim, que nao traz curl nem
-      # wget. O Host e 127.0.0.1, entao ele precisa estar no ALLOWED_HOSTS —
-      # senao o Django responde 400 e o container fica "unhealthy" de pe.
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/')"]
+      # /healthz/ so responde 200 quando o banco responde. O script manda o
+      # Host do ALLOWED_HOSTS: sem isso o Django recusa a chamada com 400 e o
+      # container fica "unhealthy" com a aplicacao funcionando.
+      test: ["CMD", "python", "/app/docker/healthcheck.py"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -72,7 +68,9 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       DB_HOST: db
       DB_PORT: "3306"
-      CELERY_BROKER_URL: redis://redis:6379/0
+      # Sem worker: o unico .delay() vivo e o e-mail de "esqueci a senha", e
+      # com isto ele roda dentro da propria requisicao, sem broker nenhum.
+      CELERY_TASK_ALWAYS_EAGER: "True"
       DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL:?defina DJANGO_SUPERUSER_EMAIL}
       DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:?defina DJANGO_SUPERUSER_PASSWORD}
       EMAIL_HOST: ${EMAIL_HOST:-smtp.gmail.com}
@@ -82,61 +80,5 @@ services:
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-FechaCaixa <no-reply@fechacaixa.local>}
 
-  worker:
-    build: .
-    restart: unless-stopped
-    # Entrypoint proprio (lista nao vazia): pula o entrypoint.sh, para as
-    # migracoes rodarem so na api. "entrypoint: []" quebra no Coolify.
-    entrypoint: ["celery", "-A", "backend", "worker", "-l", "info"]
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    environment:
-      SECRET_KEY: ${SECRET_KEY}
-      DEBUG: "False"
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
-      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS}
-      FRONTEND_URL: ${FRONTEND_URL}
-      DB_ENGINE: django.db.backends.mysql
-      DB_NAME: ${DB_NAME:-fechacaixa}
-      DB_USER: root
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_HOST: db
-      DB_PORT: "3306"
-      CELERY_BROKER_URL: redis://redis:6379/0
-      EMAIL_HOST: ${EMAIL_HOST:-smtp.gmail.com}
-      EMAIL_PORT: ${EMAIL_PORT:-587}
-      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-True}
-      EMAIL_HOST_USER: ${EMAIL_HOST_USER}
-      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD}
-      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-FechaCaixa <no-reply@fechacaixa.local>}
-
-  beat:
-    build: .
-    restart: unless-stopped
-    entrypoint: ["celery", "-A", "backend", "beat", "-l", "info", "--scheduler", "django_celery_beat.schedulers:DatabaseScheduler"]
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    environment:
-      SECRET_KEY: ${SECRET_KEY}
-      DEBUG: "False"
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
-      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS}
-      DB_ENGINE: django.db.backends.mysql
-      DB_NAME: ${DB_NAME:-fechacaixa}
-      DB_USER: root
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_HOST: db
-      DB_PORT: "3306"
-      CELERY_BROKER_URL: redis://redis:6379/0
-
 volumes:
   mysql_data:
-  redis_data:
