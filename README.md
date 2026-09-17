@@ -6,7 +6,7 @@
 Backend do **FechaCaixa**: o fechamento de caixa das lojas de uma empresa —
 lançamento, conferência e correção.
 
-Django + Django REST Framework, MySQL, Celery para tarefas assíncronas.
+Django + Django REST Framework, MySQL.
 A autenticação usa JWT guardado em cookies HTTP-only — o token nunca vai no
 corpo da resposta, para não ficar acessível ao JavaScript.
 

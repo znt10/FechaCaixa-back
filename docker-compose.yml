@@ -21,13 +21,6 @@ services:
       timeout: 5s
       retries: 10
 
-  redis:
-    image: redis:7-alpine
-    container_name: fechacaixa_redis
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:6380:6379"
-
   api:
     build: .
     container_name: fechacaixa_api
@@ -41,8 +34,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_started
     volumes:
       - .:/app
     ports:
@@ -51,49 +42,14 @@ services:
       - .env
     environment:
       DB_HOST: db
-      CELERY_BROKER_URL: redis://redis:6379/0
+      # Igual ao deploy: sem worker, o .delay() roda dentro da requisicao. Sem
+      # isto o e-mail de "esqueci a senha" iria para um broker que nao existe
+      # aqui, e o pedido ficaria pendurado esperando conexao com o Redis.
+      CELERY_TASK_ALWAYS_EAGER: "True"
       # "api" precisa estar na lista porque e por esse nome que o front
       # chama o Django dentro da rede do compose: com DEBUG=False o Django
       # rejeita com 400 (ALLOWED_HOSTS) qualquer Host que nao esteja aqui.
       ALLOWED_HOSTS: localhost,127.0.0.1,0.0.0.0,api
-
-  worker:
-    build: .
-    container_name: fechacaixa_worker
-    restart: on-failure
-    entrypoint: []
-    command: celery -A backend worker -l info
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    volumes:
-      - .:/app
-    env_file:
-      - .env
-    environment:
-      DB_HOST: db
-      CELERY_BROKER_URL: redis://redis:6379/0
-
-  beat:
-    build: .
-    container_name: fechacaixa_beat
-    restart: on-failure
-    entrypoint: []
-    command: celery -A backend beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    volumes:
-      - .:/app
-    env_file:
-      - .env
-    environment:
-      DB_HOST: db
-      CELERY_BROKER_URL: redis://redis:6379/0
 
 volumes:
   mysql_data:
