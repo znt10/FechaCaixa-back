@@ -1,0 +1,33 @@
+# Ambiente virtual
+venv/
+env/
+.venv/
+.db.sqlite3
+
+# Arquivos de ambiente (variáveis sensíveis)
+.env
+
+# Python
+__pycache__/
+*.pyc
+__pyo__
+*.pyo
+*.pyd
+# Django
+staticfiles/
+*.log
+*.pot
+*.pyc
+.__pycache__
+.pyc 
+settings.py
+!backend/backend/settings.py
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Docs internos de planejamento (specs/plans de sessao) — nao vao pro repo
+docs/superpowers/
+
+# Configuracao local do Claude Code (nao vai pro repo)
+.claude/

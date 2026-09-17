@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev-local]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      SECRET_KEY: ci-nao-e-segredo
+      # Sem valor padrao no settings (host e URL de producao nao ficam no
+      # codigo), entao o CI precisa declarar as tres ou o Django nem sobe.
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      CSRF_TRUSTED_ORIGINS: http://localhost:3000
+      # O test_grupos chama o proprio ensure_admin, e o comando aborta sem
+      # estas duas — do mesmo jeito que abortaria no deploy (entrypoint.sh).
+      DJANGO_SUPERUSER_EMAIL: ci@fechacaixa.local
+      DJANGO_SUPERUSER_PASSWORD: ci-nao-e-segredo
+      # DB_ENGINE ausente -> settings caem no sqlite (sem MySQL no CI)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Dependencias de sistema (WeasyPrint / mysqlclient)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangoft2-1.0-0 default-libmysqlclient-dev build-essential pkg-config
+      - run: pip install -r requirements.txt
+      # O settings usa CompressedManifestStaticFilesStorage: o /admin resolve
+      # 'admin/css/base.css' pelo manifesto, e sem collectstatic o manifesto
+      # nao existe — o test_admin, que abre paginas do admin, estoura antes de
+      # afirmar o que veio afirmar. E o mesmo passo que o entrypoint.sh roda no
+      # deploy, entao rodar aqui tambem faz o CI pegar a config de estatico
+      # quebrada antes dela derrubar a producao.
+      - run: python manage.py collectstatic --noinput
+      - run: python manage.py test app --verbosity 2

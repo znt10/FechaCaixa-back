@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
+  <NFe>
+    <infNFe Id="NFe35260712345678000199550010000012341000012345" versao="4.00">
+      <ide>
+        <nNF>1234</nNF>
+        <serie>1</serie>
+        <dhEmi>2026-07-15T10:30:00-03:00</dhEmi>
+        <tpNF>1</tpNF>
+      </ide>
+      <emit>
+        <CNPJ>12345678000199</CNPJ>
+        <xNome>Embalagens do Vale LTDA</xNome>
+      </emit>
+      <dest>
+        <CNPJ>98765432000188</CNPJ>
+        <xNome>Loja A</xNome>
+      </dest>
+      <total>
+        <ICMSTot>
+          <vNF>800.00</vNF>
+        </ICMSTot>
+      </total>
+    </infNFe>
+  </NFe>
+  <protNFe versao="4.00">
+    <infProt>
+      <chNFe>35260712345678000199550010000012341000012345</chNFe>
+      <cStat>100</cStat>
+    </infProt>
+  </protNFe>
+</nfeProc>

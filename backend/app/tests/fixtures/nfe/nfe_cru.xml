@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+  <infNFe Id="NFe35260755443322000111550010000099991000099999" versao="4.00">
+    <ide>
+      <nNF>9999</nNF>
+      <serie>2</serie>
+      <dhEmi>2026-07-20T08:00:00-03:00</dhEmi>
+      <tpNF>1</tpNF>
+    </ide>
+    <emit>
+      <CNPJ>55443322000111</CNPJ>
+      <xNome>Posto Central</xNome>
+    </emit>
+    <dest>
+      <CNPJ>98765432000188</CNPJ>
+      <xNome>Loja A</xNome>
+    </dest>
+    <total>
+      <ICMSTot>
+        <vNF>250.50</vNF>
+      </ICMSTot>
+    </total>
+  </infNFe>
+</NFe>

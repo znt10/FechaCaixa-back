@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe">
+  <infNFe Id="NFe35260711112222000133550010000055551000055555" versao="3.10">
+    <ide>
+      <nNF>5555</nNF>
+      <serie>1</serie>
+      <dEmi>2026-06-30</dEmi>
+      <tpNF>1</tpNF>
+    </ide>
+    <emit>
+      <CNPJ>11112222000133</CNPJ>
+      <xNome>Distribuidora Antiga</xNome>
+    </emit>
+    <dest>
+      <CNPJ>98765432000188</CNPJ>
+      <xNome>Loja A</xNome>
+    </dest>
+    <total>
+      <ICMSTot>
+        <vNF>120.00</vNF>
+      </ICMSTot>
+    </total>
+  </infNFe>
+</NFe>
