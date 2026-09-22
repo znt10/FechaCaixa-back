@@ -6,13 +6,35 @@ from rest_framework import serializers
 from app.grupos import GRUPO_FUNCIONARIO
 from app.models import Conta, DispositivoDoFormulario, PerfilUsuario
 
+from .acesso import CONFIGURACAO_DO_FORMULARIO
+
 
 class MinhaEmpresaSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(source="public_id", read_only=True)
 
+    # Declarado para a frase do erro, que aparece na tela da gerencia: o
+    # "Este campo nao pode ser em branco." do DRF nao diz o que escrever.
+    # `trim_whitespace` (padrao do CharField) faz "   " chegar vazio e cair
+    # aqui, em vez de gravar um nome que deixaria "Houve perda de ?" no
+    # formulario.
+    nome_dos_itens = serializers.CharField(
+        max_length=40,
+        required=False,
+        error_messages={
+            "blank": "Diga como a empresa chama o que vende. Ex.: salgados, pães.",
+        },
+    )
+
     class Meta:
         model = Conta
-        fields = ["id", "nome", "slug", "codigo_acesso", "fechamentos_por_dia"]
+        fields = [
+            "id",
+            "nome",
+            "slug",
+            "codigo_acesso",
+            "fechamentos_por_dia",
+            *CONFIGURACAO_DO_FORMULARIO,
+        ]
         # Trocar o codigo derruba todos os aparelhos: e uma acao com
         # consequencia, feita por um botao que avisa, e nao a edicao de um campo
         # de texto que alguem salva sem perceber o que aconteceu.

@@ -4,6 +4,18 @@ from rest_framework import serializers
 
 from app.models import Conta
 
+# O que muda o formulario de uma empresa para outra. Uma lista so, usada pela
+# rota publica do formulario e pela tela Empresa: se as duas divergissem, a
+# gerencia desligaria uma pergunta que o celular da loja continuaria mostrando.
+CONFIGURACAO_DO_FORMULARIO = [
+    "pergunta_retirada",
+    "pergunta_despesa",
+    "pergunta_devolucao",
+    "pergunta_consumo",
+    "catalogo_ativo",
+    "nome_dos_itens",
+]
+
 
 class EmpresaDoFormularioSerializer(serializers.ModelSerializer):
     """O que o formulario mostra no cabecalho e usa para montar os campos."""
@@ -12,7 +24,7 @@ class EmpresaDoFormularioSerializer(serializers.ModelSerializer):
         model = Conta
         # O slug e o endereco publico da empresa (/primavera): depois de
         # digitar o codigo, e para la que o aparelho e mandado.
-        fields = ["nome", "slug", "fechamentos_por_dia"]
+        fields = ["nome", "slug", "fechamentos_por_dia", *CONFIGURACAO_DO_FORMULARIO]
 
 
 class AcessoAoFormularioSerializer(serializers.Serializer):

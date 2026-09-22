@@ -55,6 +55,36 @@ class Conta(BaseModel):
     # ligado uma conta por vez, comecando pela que aceitou testar.
     modulo_notas_ativo = models.BooleanField(default=False)
 
+    # O formulario sob medida. O FechaCaixa nasceu numa rede de salgados e
+    # perguntava de salgado para todo mundo; quem vende outra coisa (ou nao
+    # tem retirada, ou nao da lanche para a equipe) respondia "nao" toda noite
+    # a pergunta que nao era dele. Cada pergunta opcional liga e desliga aqui.
+    # Tudo nasce ligado: as contas de antes continuam com o formulario igual.
+    #
+    # Desligar e so esconder a pergunta: o backend continua aceitando o dado.
+    # Corrigir um turno antigo que TEM consumo, numa conta que desligou o
+    # consumo depois, nao pode virar erro — nem apagar o consumo.
+    pergunta_retirada = models.BooleanField("Pergunta de retirada", default=True)
+    pergunta_despesa = models.BooleanField("Pergunta de despesa", default=True)
+    pergunta_devolucao = models.BooleanField("Pergunta de devolução", default=True)
+    pergunta_consumo = models.BooleanField("Pergunta de consumo", default=True)
+
+    # Um interruptor so para tudo que depende do catalogo de itens: a
+    # pergunta de perda no formulario, a aba Catalogo, o filtro Desperdicio em
+    # Saidas. Nao faz sentido ter um sem o outro — a perda se lanca POR item
+    # do catalogo.
+    catalogo_ativo = models.BooleanField("Usa catálogo de itens", default=True)
+
+    # Como a empresa chama o que vende, no plural: entra no meio de frase
+    # ("Houve perda de paes?", "Catalogo de paes"). Plural so, e nao
+    # singular + genero: "Houve perda de ..." dispensa o "algum/alguma".
+    nome_dos_itens = models.CharField(
+        "Como chama o que vende (plural)",
+        max_length=40,
+        default="salgados",
+        help_text="Ex.: salgados, pães, tortas. Aparece no formulário e no catálogo.",
+    )
+
     # Sem O/0 e I/1: o codigo e digitado a mao, no celular, as vezes por quem
     # esta lendo um bilhete escrito a caneta.
     LETRAS_DO_CODIGO = "ABCDEFGHJKLMNPQRSTUVWXYZ"
