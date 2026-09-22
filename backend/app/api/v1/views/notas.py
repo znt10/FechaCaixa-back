@@ -1,7 +1,11 @@
 import datetime
 import uuid
+from decimal import Decimal
 
+from django.db.models import Count, DecimalField, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from rest_framework import mixins, viewsets
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -29,6 +33,95 @@ TAMANHO_MAXIMO_DO_XML = 2 * 1024 * 1024
 LIMITE_DE_ARQUIVOS_POR_LOTE = 500
 
 
+ZERO = Decimal("0.00")
+
+# `max_digits` acima do campo (12) porque aqui o numero e uma SOMA: doze casas
+# bastam para uma nota, nao para o mes inteiro de oito lojas somado.
+DINHEIRO = DecimalField(max_digits=16, decimal_places=2)
+
+
+class PaginacaoDeNotasComTotais(PageNumberPagination):
+    """A pagina de notas, mais quanto a empresa gastou no filtro inteiro.
+
+    A listagem pagina em 50, entao a tela nao tem como somar o que recebeu: num
+    mes de 300 notas ela mostraria um terco do gasto com cara de total, e e por
+    esse numero que a gerencia fecha o mes. A soma sai daqui, sobre o queryset
+    ja filtrado, e nao de um endpoint proprio: totais e lista precisam ser do
+    mesmo filtro e chegar juntos, senao a faixa de cima discorda da tabela de
+    baixo enquanto o segundo pedido nao responde.
+
+    Custa uma query a mais por pagina — um `aggregate` sem join, contra um
+    indice que a listagem ja usa.
+    """
+
+    def paginate_queryset(self, queryset, request, view=None):
+        # Aqui, e nao em `get_paginated_response`, porque e este o unico ponto
+        # em que o queryset filtrado passa pelas maos do paginador; depois so
+        # existe a pagina ja serializada.
+        self.totais = self._somar(queryset)
+        return super().paginate_queryset(queryset, request, view)
+
+    def _somar(self, queryset):
+        """Soma tudo e, de novo, so o que falta classificar.
+
+        `Coalesce` em volta de cada `Sum` porque soma de conjunto vazio e NULL,
+        e a tela recebe dinheiro: sem ele a faixa escreveria "R$ NaN" no mes em
+        que nao ha pendencia nenhuma — justamente o mes em que esta tudo certo.
+        """
+        soma = queryset.aggregate(
+            valor=Coalesce(
+                Sum("valor_total", output_field=DINHEIRO),
+                Value(ZERO),
+                output_field=DINHEIRO,
+            ),
+            pendentes_valor=Coalesce(
+                Sum(
+                    "valor_total",
+                    filter=Q(elemento__isnull=True),
+                    output_field=DINHEIRO,
+                ),
+                Value(ZERO),
+                output_field=DINHEIRO,
+            ),
+            pendentes_quantidade=Count("id", filter=Q(elemento__isnull=True)),
+        )
+
+        return {
+            # String e nao float: dinheiro em float chega ao front como
+            # 84320.099999 e a faixa arredonda o gasto do mes. E o mesmo
+            # formato que `valor_total` ja tem em cada nota da lista.
+            "valor": str(soma["valor"].quantize(ZERO)),
+            "pendentes": {
+                "quantidade": soma["pendentes_quantidade"],
+                "valor": str(soma["pendentes_valor"].quantize(ZERO)),
+            },
+        }
+
+    def get_paginated_response(self, data):
+        resposta = super().get_paginated_response(data)
+        resposta.data["totais"] = self.totais
+        return resposta
+
+    def get_paginated_response_schema(self, schema_do_item):
+        """O `totais` tambem no schema: o front le a doc gerada para saber o
+        que a rota devolve, e um campo fora dela e um campo que ninguem usa."""
+        esquema = super().get_paginated_response_schema(schema_do_item)
+        esquema["properties"]["totais"] = {
+            "type": "object",
+            "properties": {
+                "valor": {"type": "string", "example": "84320.10"},
+                "pendentes": {
+                    "type": "object",
+                    "properties": {
+                        "quantidade": {"type": "integer", "example": 7},
+                        "valor": {"type": "string", "example": "3410.00"},
+                    },
+                },
+            },
+        }
+        return esquema
+
+
 class NotaFiscalViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
@@ -52,6 +145,7 @@ class NotaFiscalViewSet(
 
     serializer_class = NotaFiscalSerializer
     permission_classes = [IsAuthenticated, ModuloDeNotasAtivo]
+    pagination_class = PaginacaoDeNotasComTotais
     lookup_field = "public_id"
 
     def get_queryset(self):

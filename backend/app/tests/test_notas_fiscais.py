@@ -1728,3 +1728,166 @@ class ModuloNoUsuarioLogadoTests(TestCase):
         self.assertEqual(
             client_dono.get("/api/v1/notas-fiscais/").status_code, 200
         )
+
+
+class TotaisDaListagemDeNotasTests(TestCase):
+    """A faixa de totais da tela de notas.
+
+    A listagem pagina em 50, entao a tela NAO pode somar o que esta na pagina:
+    num mes de 300 notas ela mostraria um terco do gasto com cara de total, e
+    esse e o numero pelo qual a gerencia fecha o mes. Por isso a soma sai do
+    servidor, sobre o filtro inteiro, e viaja junto da propria pagina.
+    """
+
+    def setUp(self):
+        Group.objects.get_or_create(name="Gerente")
+
+        self.conta = conta_padrao()
+        self.conta.modulo_notas_ativo = True
+        self.conta.save()
+
+        self.loja = criar_loja(
+            nome_loja="Loja A", cidade="Patos", endereco="Rua 1",
+            cnpj="98765432000188",
+        )
+        self.outra_loja = criar_loja(
+            nome_loja="Loja B", cidade="Patos", endereco="Rua 2",
+            cnpj="98765432000269",
+        )
+
+        self.user = User.objects.create_user(username="ger@t.com", password="123456")
+        self.user.groups.add(Group.objects.get(name="Gerente"))
+        vincular_conta(self.user, self.conta)
+
+        self.client_api = APIClient()
+        self.client_api.force_authenticate(self.user)
+
+        self.proxima_chave = 0
+
+    def _fornecedor(self, conta=None, cnpj="12345678000199"):
+        from app.models import Fornecedor
+
+        fornecedor, _ = Fornecedor.objects.get_or_create(
+            conta=conta or self.conta,
+            cnpj=cnpj,
+            defaults={"razao_social": "Fornecedor X"},
+        )
+        return fornecedor
+
+    def _elemento(self, conta=None, nome="Embalagem"):
+        from app.models import ElementoDeDespesa, GrupoDeDespesa
+
+        conta = conta or self.conta
+        grupo, _ = GrupoDeDespesa.objects.get_or_create(conta=conta, nome="Insumos")
+        elemento, _ = ElementoDeDespesa.objects.get_or_create(grupo=grupo, nome=nome)
+        return elemento
+
+    def _nota(self, valor, data="2026-08-05", loja=None, conta=None, elemento=None):
+        from app.models import NotaFiscal
+
+        self.proxima_chave += 1
+        conta = conta or self.conta
+        return NotaFiscal.objects.create(
+            conta=conta,
+            loja=loja or self.loja,
+            fornecedor=self._fornecedor(conta=conta, cnpj="12345678000199"
+                                        if conta == self.conta else "22222222000191"),
+            chave=str(self.proxima_chave).zfill(44),
+            numero=str(self.proxima_chave),
+            serie="1",
+            data_emissao=datetime.date.fromisoformat(data),
+            valor_total=Decimal(valor),
+            elemento=elemento,
+            xml_bruto="<NFe/>",
+        )
+
+    def test_soma_o_valor_de_todas_as_notas_da_conta(self):
+        self._nota("100.50")
+        self._nota("200.25")
+
+        resp = self.client_api.get("/api/v1/notas-fiscais/")
+
+        self.assertEqual(resp.data["totais"]["valor"], "300.75")
+
+    def test_o_total_nao_inclui_nota_de_outra_empresa(self):
+        """Mesma regra da listagem: o total e o gasto DESTA empresa."""
+        from app.models import Conta
+
+        self._nota("100.00")
+        outra = Conta.objects.create(nome="Outro negocio", modulo_notas_ativo=True)
+        self._nota(
+            "999.00",
+            conta=outra,
+            loja=criar_loja(
+                conta=outra, nome_loja="Alheia", cidade="X", endereco="Y",
+                cnpj="11111111000191",
+            ),
+        )
+
+        resp = self.client_api.get("/api/v1/notas-fiscais/")
+
+        self.assertEqual(resp.data["totais"]["valor"], "100.00")
+
+    def test_o_total_obedece_o_filtro_de_loja_e_de_data(self):
+        """Senao a faixa diria um numero e a tabela embaixo mostraria outro."""
+        self._nota("100.00", data="2026-08-05", loja=self.loja)
+        self._nota("50.00", data="2026-08-05", loja=self.outra_loja)
+        self._nota("70.00", data="2026-09-01", loja=self.loja)
+
+        resp = self.client_api.get(
+            f"/api/v1/notas-fiscais/?loja={self.loja.public_id}"
+            "&de=2026-08-01&ate=2026-08-31"
+        )
+
+        self.assertEqual(resp.data["totais"]["valor"], "100.00")
+
+    def test_conta_e_soma_o_que_falta_classificar(self):
+        self._nota("100.00")
+        self._nota("30.00")
+        self._nota("70.00", elemento=self._elemento())
+
+        resp = self.client_api.get("/api/v1/notas-fiscais/")
+
+        self.assertEqual(resp.data["totais"]["pendentes"]["quantidade"], 2)
+        self.assertEqual(resp.data["totais"]["pendentes"]["valor"], "130.00")
+
+    def test_sem_pendencia_os_numeros_sao_zero_e_nao_nulos(self):
+        """`Sum` de conjunto vazio e None, e a tela nao pode receber nulo onde
+        espera dinheiro: vira "R$ NaN" na faixa."""
+        self._nota("100.00", elemento=self._elemento())
+
+        resp = self.client_api.get("/api/v1/notas-fiscais/")
+
+        self.assertEqual(resp.data["totais"]["pendentes"]["quantidade"], 0)
+        self.assertEqual(resp.data["totais"]["pendentes"]["valor"], "0.00")
+
+    def test_sem_nota_nenhuma_o_total_e_zero(self):
+        resp = self.client_api.get("/api/v1/notas-fiscais/")
+
+        self.assertEqual(resp.data["count"], 0)
+        self.assertEqual(resp.data["totais"]["valor"], "0.00")
+
+    def test_a_segunda_pagina_traz_o_mesmo_total_da_primeira(self):
+        """O total e do filtro, nao da pagina — e e essa a razao de existir."""
+        for _ in range(51):
+            self._nota("10.00")
+
+        primeira = self.client_api.get("/api/v1/notas-fiscais/")
+        segunda = self.client_api.get("/api/v1/notas-fiscais/?page=2")
+
+        self.assertEqual(len(primeira.data["results"]), 50)
+        self.assertEqual(len(segunda.data["results"]), 1)
+        self.assertEqual(primeira.data["totais"]["valor"], "510.00")
+        self.assertEqual(segunda.data["totais"]["valor"], "510.00")
+
+    def test_o_filtro_de_classificada_nao_deixa_pendencia_fantasma(self):
+        """Com "so as classificadas" na tela, nao ha o que falta classificar:
+        a faixa nao pode avisar de uma pendencia que nao esta na lista."""
+        self._nota("100.00")
+        self._nota("70.00", elemento=self._elemento())
+
+        resp = self.client_api.get("/api/v1/notas-fiscais/?classificada=true")
+
+        self.assertEqual(resp.data["totais"]["valor"], "70.00")
+        self.assertEqual(resp.data["totais"]["pendentes"]["quantidade"], 0)
+        self.assertEqual(resp.data["totais"]["pendentes"]["valor"], "0.00")
