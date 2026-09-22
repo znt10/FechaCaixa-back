@@ -139,6 +139,37 @@ class ContaAdmin(admin.ModelAdmin):
     # ja entregue as lojas.
     readonly_fields = ('slug',)
     search_fields = ('nome',)
+    # O formulario sob medida num bloco proprio: sao seis campos que so fazem
+    # sentido juntos, e no meio dos outros ninguem acharia "nome_dos_itens".
+    # O primeiro bloco sai da lista que o Django monta sozinho, e nao de uma
+    # lista escrita aqui: assim um campo novo em Conta continua aparecendo no
+    # admin sem ninguem lembrar de acrescenta-lo.
+    CAMPOS_DO_FORMULARIO = (
+        'pergunta_retirada',
+        'pergunta_despesa',
+        'pergunta_devolucao',
+        'pergunta_consumo',
+        'catalogo_ativo',
+        'nome_dos_itens',
+    )
+
+    def get_fieldsets(self, request, obj=None):
+        todos = super().get_fieldsets(request, obj)[0][1]['fields']
+        demais = [c for c in todos if c not in self.CAMPOS_DO_FORMULARIO]
+        return (
+            (None, {'fields': demais}),
+            (
+                'Formulário do caixa',
+                {
+                    'fields': self.CAMPOS_DO_FORMULARIO,
+                    'description': (
+                        'Quais perguntas opcionais a loja responde ao fechar o '
+                        'caixa, e como a empresa chama o que vende. Desligar só '
+                        'esconde a pergunta: o que já foi lançado continua lá.'
+                    ),
+                },
+            ),
+        )
 
 
 @admin.register(PerfilUsuario)
