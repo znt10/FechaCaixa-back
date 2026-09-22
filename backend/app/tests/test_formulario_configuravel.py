@@ -165,3 +165,41 @@ class DonoDaPlataformaConfiguraPeloAdminTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         for campo in CONFIGURACAO:
             self.assertContains(resp, f'name="{campo}"')
+
+
+class CatalogoNoUsuarioLogadoTests(APITestCase):
+    """O painel decide se desenha a aba Catalogo e o filtro Desperdicio pelo
+    `/user/me/`, e nao pela tela Empresa: Saidas tambem e do Funcionario, e a
+    tela Empresa responde 403 para ele — o filtro nunca sumiria."""
+
+    URL = "/api/v1/user/me/"
+
+    def setUp(self):
+        self.conta = Conta.objects.create(nome="Padaria Central")
+        self.funcionario = User.objects.create_user(username="f@padaria.com", password="x")
+        self.funcionario.groups.add(Group.objects.get_or_create(name="Funcionario")[0])
+        vincular_conta(self.funcionario, self.conta)
+        self.client.force_authenticate(user=self.funcionario)
+
+    def test_diz_que_o_catalogo_esta_ligado(self):
+        resp = self.client.get(self.URL)
+
+        self.assertIs(resp.data["modulos"]["catalogo"], True)
+
+    def test_diz_que_o_catalogo_esta_desligado(self):
+        self.conta.catalogo_ativo = False
+        self.conta.save()
+
+        resp = self.client.get(self.URL)
+
+        self.assertIs(resp.data["modulos"]["catalogo"], False)
+
+    def test_o_dono_da_plataforma_ve_o_catalogo_mesmo_sem_empresa(self):
+        """Mesma regra das notas: sem empresa, o superuser confere tudo de
+        fora, e a aba nao pode sumir justamente para ele."""
+        dono = User.objects.create_superuser(username="dono@x.com", password="x")
+        self.client.force_authenticate(user=dono)
+
+        resp = self.client.get(self.URL)
+
+        self.assertIs(resp.data["modulos"]["catalogo"], True)

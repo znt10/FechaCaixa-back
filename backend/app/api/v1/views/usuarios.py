@@ -75,6 +75,13 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         tem_notas = request.user.is_superuser or bool(
             conta and conta.modulo_notas_ativo
         )
+        # Mesma regra para o catalogo de itens, que a empresa pode desligar
+        # quando nao vende nada de catalogo. Mora aqui, e nao so na tela
+        # Empresa, porque Saidas (onde fica o filtro Desperdicio) tambem e do
+        # Funcionario, e a tela Empresa responde 403 para ele.
+        tem_catalogo = request.user.is_superuser or bool(
+            conta and conta.catalogo_ativo
+        )
 
         return Response({
             "id": request.user.id,
@@ -83,6 +90,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             "group": get_user_group_name(request.user),
             "modulos": {
                 "notas_fiscais": tem_notas,
+                "catalogo": tem_catalogo,
             },
         })
 
