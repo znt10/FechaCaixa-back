@@ -224,7 +224,7 @@ class FechamentoCaixaPublicoTests(APITestCase):
         )
 
         self.assertEqual(resp.status_code, 400)
-        self.assertIn("responsavel_retirada", resp.data)
+        self.assertIn("retiradas", resp.data)
 
     def test_despesa_sim_exige_descricao_e_valor(self):
         resp = self.client.post(

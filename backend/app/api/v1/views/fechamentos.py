@@ -165,6 +165,7 @@ class FechamentoCaixaViewSet(viewsets.ModelViewSet):
     # conta de `total`, entao sem elas aqui cada linha do painel custaria uma
     # consulta so para fechar o proprio total.
     ).prefetch_related(
+        "retiradas__responsavel",
         "consumos__encarregado",
         "despesas",
         "desperdicios__salgado__categoria",

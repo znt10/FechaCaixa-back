@@ -138,7 +138,8 @@ class PlanilhaDoPeriodoView(APIView):
             FechamentoCaixa.objects.filter(loja__in=lojas, data__gte=de, data__lte=ate)
             .select_related("loja")
             .prefetch_related(
-                "consumos__encarregado", "despesas", "desperdicios__salgado__categoria"
+                "retiradas__responsavel", "consumos__encarregado", "despesas",
+                "desperdicios__salgado__categoria",
             )
             .order_by("data", "loja__nome_loja", "periodo")
         )
@@ -263,15 +264,25 @@ class PlanilhaDoPeriodoView(APIView):
                     "Despesa", despesa.descricao,
                     _numero(despesa.valor), f.nome_funcionario,
                 ]))
-            if f.houve_retirada and _numero(f.valor_retirado) > 0:
-                quem = (
-                    f.responsavel_retirada.nome
-                    if f.responsavel_retirada
-                    else "Retirada"
-                )
+            # Uma linha por pessoa: o dono e a socia que retiraram no mesmo
+            # turno sao cobrados separados no fim do mes. Sem linhas, cai no
+            # resumo do fechamento — e o que sobra de um lancamento gravado
+            # por fora do serializer, e a soma continua tendo que bater com a
+            # coluna Retirada da aba Entradas.
+            retiradas = [
+                (r.responsavel.nome if r.responsavel else "Retirada", r.valor)
+                for r in f.retiradas.all()
+            ]
+            if not retiradas and f.houve_retirada:
+                retiradas = [(
+                    f.responsavel_retirada.nome if f.responsavel_retirada else "Retirada",
+                    f.valor_retirado,
+                )]
+            for quem, valor in retiradas:
+                if _numero(valor) <= 0:
+                    continue
                 linhas.append((f.loja.nome_loja, comum + [
-                    "Retirada", quem,
-                    _numero(f.valor_retirado), f.nome_funcionario,
+                    "Retirada", quem, _numero(valor), f.nome_funcionario,
                 ]))
             if f.houve_devolucao and _numero(f.devolucao_valor) > 0:
                 linhas.append((f.loja.nome_loja, comum + [

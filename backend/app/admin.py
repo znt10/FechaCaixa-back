@@ -69,7 +69,10 @@ class FechamentoCaixaAdmin(admin.ModelAdmin):
     date_hierarchy = 'data'
     # Sem isso a coluna da empresa faz uma consulta por linha.
     list_select_related = ('loja', 'loja__conta')
-    autocomplete_fields = ('responsavel_retirada', 'lancado_por')
+    autocomplete_fields = ('lancado_por',)
+    # O resumo das linhas de Retirada (soma e primeira pessoa). Editar aqui
+    # faria o total divergir de quem retirou — quem corrige e o painel.
+    readonly_fields = ('houve_retirada', 'responsavel_retirada', 'valor_retirado')
 
     # O fechamento nao guarda conta de proposito: ela vem da loja, e duplicar o
     # campo criaria uma segunda verdade — mudar a loja de empresa deixaria os
