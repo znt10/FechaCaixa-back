@@ -6,6 +6,7 @@ O de escrita nao aceita nem devolve nada alem do que o formulario pede.
 """
 
 from datetime import timedelta
+from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
@@ -20,6 +21,7 @@ from app.models import (
     FechamentoCaixa,
     Loja,
     ResponsavelRetirada,
+    Retirada,
     Salgado,
 )
 from app.permissions import get_conta_do_usuario
@@ -104,6 +106,52 @@ class DespesaLidaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Despesa
         fields = ["id", "descricao", "valor"]
+        read_only_fields = fields
+
+
+class RetiradaDoTurnoSerializer(serializers.Serializer):
+    """Uma linha de retirada dentro do envio do fechamento: quem levou, e quanto.
+
+    Era um par de campos no fechamento, e cabia uma pessoa por turno. Entra
+    pelo mesmo envio, como a despesa e o consumo, e pelo mesmo motivo para nao
+    ter endpoint proprio.
+    """
+
+    responsavel = serializers.SlugRelatedField(
+        slug_field="public_id",
+        queryset=ResponsavelRetirada.objects.filter(ativo=True),
+        error_messages={
+            "does_not_exist": "Essa pessoa nao esta na lista de quem retira.",
+        },
+    )
+    valor = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+    def validate_valor(self, valor):
+        if valor <= 0:
+            raise serializers.ValidationError("Informe quanto foi retirado.")
+        return valor
+
+    def validate(self, data):
+        """Meia retirada nao existe — mesma razao da despesa: num PATCH o DRF
+        propaga `partial=True` e os dois campos viram opcionais."""
+        if {"responsavel", "valor"} - set(data):
+            raise serializers.ValidationError(
+                "Informe quem retirou e o valor retirado."
+            )
+        return data
+
+
+class RetiradaLidaSerializer(serializers.ModelSerializer):
+    """A mesma linha de volta, aninhada no fechamento, com o nome junto."""
+
+    id = serializers.UUIDField(source="public_id", read_only=True)
+    responsavel = serializers.SlugRelatedField(slug_field="public_id", read_only=True)
+    # Nulo quando a pessoa foi apagada do cadastro: o valor continua somando.
+    nome = serializers.CharField(source="responsavel.nome", read_only=True, default=None)
+
+    class Meta:
+        model = Retirada
+        fields = ["id", "responsavel", "nome", "valor"]
         read_only_fields = fields
 
 
@@ -218,6 +266,82 @@ def gravar_despesas(fechamento, despesas):
     )
 
 
+def normalizar_retiradas(data, instance=None):
+    """Traduz o que o payload disse da retirada para a lista de linhas.
+
+    A lista `retiradas` e a verdade; `responsavel_retirada`/`valor_retirado`
+    sao o resumo que `gravar_retiradas` escreve, e nunca vem do payload.
+    Enquanto o app antigo estiver no ar ele manda o par, e o par vira uma
+    linha — sem isto a loja perderia a retirada do turno em silencio entre um
+    deploy e o outro.
+
+    Deixa `data["retiradas"]` como None quando o payload nao falou de retirada
+    (a correcao de PIX nao pode apagar a retirada do turno).
+    """
+    responsavel = data.pop("responsavel_retirada", None)
+    valor = data.pop("valor_retirado", None)
+
+    if data.get("retiradas") is not None:
+        data["houve_retirada"] = bool(data["retiradas"])
+        return
+    data.pop("retiradas", None)
+
+    if "houve_retirada" not in data:
+        # Num PATCH sem a pergunta, o par sozinho ainda e uma correcao dele.
+        if responsavel is None and valor is None:
+            return
+        data["houve_retirada"] = bool(instance and instance.houve_retirada)
+
+    if not data["houve_retirada"]:
+        data["retiradas"] = []
+        return
+
+    # Ligar a pergunta e nao preencher e o meio do caminho do formulario, nao
+    # uma retirada.
+    if not (responsavel and valor and valor > 0):
+        raise serializers.ValidationError(
+            {"valor_retirado": "Informe quem retirou e o valor retirado."}
+        )
+    data["retiradas"] = [{"responsavel": responsavel, "valor": valor}]
+
+
+def validar_conta_das_retiradas(retiradas, conta_id):
+    """O endpoint e publico: o payload pode citar gente da empresa vizinha."""
+    for linha in retiradas or []:
+        if conta_id and linha["responsavel"].conta_id != conta_id:
+            raise serializers.ValidationError(
+                {"retiradas": "Esse responsavel nao pertence a mesma conta da loja."}
+            )
+
+
+def gravar_retiradas(fechamento, retiradas):
+    """Regrava as linhas de retirada de um turno e o resumo no fechamento.
+
+    O resumo (soma, primeira pessoa) e escrito aqui e so aqui: e o que o total
+    do caixa, os graficos e a planilha leem, e ele nao pode divergir das
+    linhas.
+    """
+    fechamento.retiradas.all().delete()
+    Retirada.objects.bulk_create(
+        [
+            Retirada(
+                fechamento=fechamento,
+                responsavel=linha["responsavel"],
+                valor=linha["valor"],
+            )
+            for linha in retiradas
+        ]
+    )
+    fechamento.houve_retirada = bool(retiradas)
+    fechamento.responsavel_retirada = retiradas[0]["responsavel"] if retiradas else None
+    fechamento.valor_retirado = (
+        sum((linha["valor"] for linha in retiradas), Decimal("0")) if retiradas else None
+    )
+    fechamento.save(
+        update_fields=["houve_retirada", "responsavel_retirada", "valor_retirado"]
+    )
+
+
 def gravar_consumos(fechamento, consumos):
     """Regrava as linhas de consumo de um turno.
 
@@ -270,6 +394,9 @@ class FechamentoCaixaSerializer(serializers.ModelSerializer):
         source="responsavel_retirada.nome", read_only=True, default=None
     )
     lancado_por = serializers.SlugRelatedField(slug_field="public_id", read_only=True)
+    # Uma linha por pessoa. `responsavel_retirada`/`valor_retirado` acima sao o
+    # resumo delas (a primeira pessoa e a soma), mantidos para quem ja le.
+    retiradas = RetiradaLidaSerializer(many=True, read_only=True)
     despesas = DespesaLidaSerializer(many=True, read_only=True)
     consumos = ConsumoLidoSerializer(many=True, read_only=True)
     desperdicios = DesperdicioLidoSerializer(many=True, read_only=True)
@@ -297,7 +424,7 @@ class FechamentoCaixaSerializer(serializers.ModelSerializer):
             "pix", "cartao", "dinheiro", "link_pagamento",
             "recebido", "registrado", "total", "saidas", "total_liquido",
             "houve_retirada", "responsavel_retirada", "responsavel_retirada_nome",
-            "valor_retirado",
+            "valor_retirado", "retiradas",
             "despesas",
             "houve_devolucao", "devolucao_valor",
             "houve_desperdicio", "desperdicio_detalhes",
@@ -336,6 +463,9 @@ class FechamentoCaixaUpdateSerializer(FechamentoCaixaSerializer):
     # Gravavel aqui, so de leitura na listagem: corrigir o valor do gas e uma
     # das coisas que a gerencia mais faz depois que a loja manda.
     despesas = DespesaDoTurnoSerializer(many=True, required=False)
+    # Quem levou dinheiro, uma linha por pessoa. Sem isto, corrigir um turno
+    # com duas retiradas pelo par antigo apagaria a segunda.
+    retiradas = RetiradaDoTurnoSerializer(many=True, required=False)
     # Pelo mesmo motivo, e por um mais caro: o consumo vira desconto no
     # pagamento da pessoa no fim do mes. Lancado na pessoa errada, so se
     # descobre la — e ate aqui o unico conserto era cancelar o turno inteiro e
@@ -352,6 +482,9 @@ class FechamentoCaixaUpdateSerializer(FechamentoCaixaSerializer):
         o painel troca a linha pelo retorno, sem refetch.
         """
         dados = super().to_representation(instance)
+        dados["retiradas"] = RetiradaLidaSerializer(
+            instance.retiradas.select_related("responsavel"), many=True
+        ).data
         dados["despesas"] = DespesaLidaSerializer(
             instance.despesas.all(), many=True
         ).data
@@ -361,10 +494,13 @@ class FechamentoCaixaUpdateSerializer(FechamentoCaixaSerializer):
         return dados
 
     def update(self, instance, validated_data):
+        retiradas = validated_data.pop("retiradas", None)
         despesas = validated_data.pop("despesas", None)
         consumos = validated_data.pop("consumos", None)
         with transaction.atomic():
             fechamento = super().update(instance, validated_data)
+            if retiradas is not None:
+                gravar_retiradas(fechamento, retiradas)
             # `None` e "o payload nao falou de despesa"; lista vazia e "nao
             # teve nenhuma", que apaga o que estava la.
             if despesas is not None:
@@ -388,12 +524,9 @@ class FechamentoCaixaUpdateSerializer(FechamentoCaixaSerializer):
         def efetivo(campo):
             return data[campo] if campo in data else getattr(self.instance, campo)
 
-        if efetivo("houve_retirada") and not (
-            efetivo("responsavel_retirada") and efetivo("valor_retirado")
-        ):
-            raise serializers.ValidationError(
-                {"valor_retirado": "Informe quem retirou e o valor retirado."}
-            )
+        # Sem o `efetivo`: a retirada chega inteira ou nao chega. O resumo no
+        # fechamento nao e mais gravavel pelo payload.
+        normalizar_retiradas(data, self.instance)
         if efetivo("houve_devolucao") and not efetivo("devolucao_valor"):
             raise serializers.ValidationError(
                 {"devolucao_valor": "Informe o valor devolvido."}
@@ -409,6 +542,7 @@ class FechamentoCaixaUpdateSerializer(FechamentoCaixaSerializer):
         # do turno e a instancia, e nao o payload — este serializer nao deixa
         # mudar de loja.
         conta_da_loja = self.instance.loja.conta_id
+        validar_conta_das_retiradas(data.get("retiradas"), conta_da_loja)
         for consumo in data.get("consumos") or []:
             if consumo["encarregado"].conta_id != conta_da_loja:
                 raise serializers.ValidationError(
@@ -446,6 +580,10 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
             "does_not_exist": "Essa pessoa nao lanca o caixa.",
         },
     )
+    # Quem levou dinheiro da gaveta. Uma linha por pessoa: o dono e a socia
+    # retiram no mesmo turno, e antes cabia uma so. O par antigo acima ainda e
+    # aceito enquanto o app das lojas nao sobe (ver `normalizar_retiradas`).
+    retiradas = RetiradaDoTurnoSerializer(many=True, required=False)
     # O que a loja gastou no turno. Uma linha por gasto: gas, agua e remedio
     # sao tres despesas do mesmo expediente, e antes cabia uma so.
     despesas = DespesaDoTurnoSerializer(many=True, required=False)
@@ -476,6 +614,7 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
             "loja", "lancado_por", "data", "periodo",
             "pix", "cartao", "dinheiro", "link_pagamento",
             "houve_retirada", "responsavel_retirada", "valor_retirado",
+            "retiradas",
             "despesas",
             "houve_devolucao", "devolucao_valor",
             "houve_desperdicio", "desperdicio_detalhes",
@@ -523,14 +662,7 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
                 {"lancado_por": "Escolha quem esta lancando o caixa."}
             )
 
-        # Ligar a pergunta e nao preencher e o meio do caminho do formulario,
-        # nao um consumo.
-        if data.get("houve_retirada") and not (
-            data.get("responsavel_retirada") and data.get("valor_retirado")
-        ):
-            raise serializers.ValidationError(
-                {"valor_retirado": "Informe quem retirou e o valor retirado."}
-            )
+        normalizar_retiradas(data, self.instance)
         if data.get("houve_devolucao") and not data.get("devolucao_valor"):
             raise serializers.ValidationError(
                 {"devolucao_valor": "Informe o valor devolvido."}
@@ -618,11 +750,7 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
         # Loja e responsavel tem que ser da mesma conta: o endpoint e publico,
         # entao nada impede alguem de colar no payload o public_id de uma loja
         # de outra conta.
-        responsavel = data.get("responsavel_retirada")
-        if loja and responsavel and responsavel.conta_id != loja.conta_id:
-            raise serializers.ValidationError(
-                {"responsavel_retirada": "Esse responsavel nao pertence a mesma conta da loja."}
-            )
+        validar_conta_das_retiradas(data.get("retiradas"), loja.conta_id if loja else None)
 
         # Mesma razao para quem lancou e para quem consumiu: o endpoint e
         # publico, entao o payload pode citar gente da empresa vizinha.
@@ -724,6 +852,7 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
         ]
 
     def create(self, validated_data):
+        retiradas = validated_data.pop("retiradas", None) or []
         despesas = validated_data.pop("despesas", [])
         consumos = validated_data.pop("consumos", [])
         desperdicios = validated_data.pop("desperdicios", [])
@@ -733,6 +862,7 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
         # metade e deixar a gerencia descontando de uns e nao de outros.
         with transaction.atomic():
             fechamento = super().create(validated_data)
+            gravar_retiradas(fechamento, retiradas)
             gravar_despesas(fechamento, despesas)
             gravar_consumos(fechamento, consumos)
             gravar_desperdicios(fechamento, desperdicios)
@@ -745,12 +875,15 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
         `nome_funcionario` com o nome antigo, e e esse texto que sete telas
         leem.
         """
+        retiradas = validated_data.pop("retiradas", None)
         despesas = validated_data.pop("despesas", None)
         consumos = validated_data.pop("consumos", None)
         desperdicios = validated_data.pop("desperdicios", None)
         self._copiar_o_nome(validated_data)
         with transaction.atomic():
             fechamento = super().update(instance, validated_data)
+            if retiradas is not None:
+                gravar_retiradas(fechamento, retiradas)
             if despesas is not None:
                 fechamento.despesas.all().delete()
                 gravar_despesas(fechamento, despesas)
@@ -841,6 +974,7 @@ class FechamentoCaixaFormularioSerializer(serializers.ModelSerializer):
     responsavel_retirada = serializers.SlugRelatedField(
         slug_field="public_id", read_only=True
     )
+    retiradas = RetiradaLidaSerializer(many=True, read_only=True)
     despesas = DespesaLidaSerializer(many=True, read_only=True)
     segundos_para_corrigir = serializers.IntegerField(read_only=True)
     # Declarado: sem isto o ModelSerializer devolveria a chave inteira em
@@ -856,6 +990,7 @@ class FechamentoCaixaFormularioSerializer(serializers.ModelSerializer):
             "data", "periodo",
             "pix", "cartao", "dinheiro", "link_pagamento",
             "houve_retirada", "responsavel_retirada", "valor_retirado",
+            "retiradas",
             "despesas",
             "houve_devolucao", "devolucao_valor",
             "houve_desperdicio", "desperdicio_detalhes",

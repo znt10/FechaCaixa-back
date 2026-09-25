@@ -349,6 +349,12 @@ class FechamentoCaixa(BaseModel):
     dinheiro = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, default=0)
     link_pagamento = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, default=0)
 
+    # A retirada virou linha propria (migracao 0053, modelo Retirada): duas
+    # pessoas levam dinheiro no mesmo turno, e aqui cabia uma so. Os tres
+    # campos ficam como RESUMO das linhas — a soma, e a primeira pessoa — e
+    # quem grava e `gravar_retiradas`, nunca o payload. Ficam porque o total,
+    # os graficos, o painel e a planilha leem `valor_retirado`, e a soma e
+    # exatamente o numero que eles precisam.
     houve_retirada = models.BooleanField(default=False)
     responsavel_retirada = models.ForeignKey(
         ResponsavelRetirada, on_delete=models.SET_NULL, null=True, blank=True,
@@ -564,6 +570,41 @@ class Despesa(BaseModel):
 
     def __str__(self):
         return f"{self.descricao} - {self.fechamento.data} - {self.valor}"
+
+
+class Retirada(BaseModel):
+    """Quem levou dinheiro da gaveta no turno, uma linha por pessoa.
+
+    Ja foi um par de campos dentro do FechamentoCaixa (`responsavel_retirada`
+    e `valor_retirado`), e por isso cabia uma pessoa por turno. Quando o dono e
+    a socia retiram no mesmo expediente, o segundo valor nao tinha onde entrar
+    — ia somado no nome do primeiro, e o cruzamento do fim do mes por pessoa
+    saia errado para os dois.
+
+    Pendurada no fechamento pelo mesmo motivo da despesa e do consumo: loja,
+    dia e turno sao os do turno fechado, e copia diverge.
+
+    SET_NULL na pessoa, e nao PROTECT como no consumo: e o comportamento que o
+    campo antigo sempre teve, e a linha sem nome ainda soma certo no caixa.
+    """
+
+    fechamento = models.ForeignKey(
+        FechamentoCaixa, on_delete=models.CASCADE, related_name="retiradas"
+    )
+    responsavel = models.ForeignKey(
+        ResponsavelRetirada, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="retiradas_lancadas",
+    )
+    valor = models.DecimalField(max_digits=10, decimal_places=2)
+
+    class Meta:
+        # Pelo id: a ordem em que foram digitadas. created_at empata, porque
+        # as linhas do mesmo envio nascem no mesmo bulk_create.
+        ordering = ["-fechamento__data", "id"]
+
+    def __str__(self):
+        nome = self.responsavel.nome if self.responsavel else "Retirada"
+        return f"{nome} - {self.fechamento.data} - {self.valor}"
 
 
 class Consumo(BaseModel):
