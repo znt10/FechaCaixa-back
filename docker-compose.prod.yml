@@ -6,10 +6,12 @@
 #   Docker Compose Location = /docker-compose.prod.yml
 #   Dominio no servico "api", porta 8000
 #
-# So api e db. Nao ha worker, beat nem Redis: o beat agendava
+# api, db e redis. Nao ha worker nem beat: o beat agendava
 # "enviar_digest_lojas", que saiu junto com o estoque na migration 0036 e nao
 # existe mais, e o worker so tinha esse agendamento e um e-mail para entregar.
-# O e-mail agora sai na propria requisicao (CELERY_TASK_ALWAYS_EAGER).
+# O e-mail agora sai na propria requisicao (CELERY_TASK_ALWAYS_EAGER). O Redis
+# nao e broker: guarda os contadores do limite por IP, que precisam ser um so
+# para os 3 workers do gunicorn.
 # As variaveis com ${...} sao definidas na aba Environment Variables; o resto e
 # fixo porque so faz sentido dentro desta rede. Nenhum servico publica porta:
 # quem expoe a API e o proxy do Coolify.
@@ -47,6 +49,18 @@ services:
       # sucesso encerra a espera na hora.
       start_period: 180s
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # So contadores de limite, que vencem em minutos: perder tudo num restart
+    # custa nada, entao sem volume e sem gravar em disco.
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   api:
     build: .
     restart: unless-stopped
@@ -58,6 +72,8 @@ services:
       - "8000"
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       # /healthz/ so responde 200 quando o banco responde. O script manda o
@@ -86,6 +102,10 @@ services:
       # Sem worker: o unico .delay() vivo e o e-mail de "esqueci a senha", e
       # com isto ele roda dentro da propria requisicao, sem broker nenhum.
       CELERY_TASK_ALWAYS_EAGER: "True"
+      # Contadores do limite por IP (CACHES no settings.py).
+      CACHE_REDIS_URL: redis://redis:6379/0
+      # Igual ao PROXY_SEGREDO do front. Gere com `openssl rand -hex 32`.
+      PROXY_SEGREDO: ${PROXY_SEGREDO:?defina PROXY_SEGREDO}
       DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL:?defina DJANGO_SUPERUSER_EMAIL}
       DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:?defina DJANGO_SUPERUSER_PASSWORD}
       EMAIL_HOST: ${EMAIL_HOST:-smtp.gmail.com}

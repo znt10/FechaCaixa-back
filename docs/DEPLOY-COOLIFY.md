@@ -22,10 +22,12 @@ No projeto do Coolify: **+ New → Docker Compose** apontando para este reposit�
 | Docker Compose Location | `/docker-compose.prod.yml` |
 | Domínio | no serviço `api`, porta `8000` |
 
-Os serviços que sobem são dois: `api` e `db` (MySQL 8), com o banco num volume
-nomeado (`mysql_data`) que o Coolify preserva entre deploys.
+Os serviços que sobem são três: `api`, `db` (MySQL 8), com o banco num volume
+nomeado (`mysql_data`) que o Coolify preserva entre deploys, e `redis`, que só
+guarda os contadores do limite por IP (ver `docs/limite-por-ip.md`) e por isso
+não tem volume.
 
-Não há `worker`, `beat` nem Redis. O beat existia para uma tarefa agendada
+Não há `worker` nem `beat`. O beat existia para uma tarefa agendada
 (`enviar_digest_lojas`) que saiu junto com o estoque na migration `0036`, e o
 worker não tinha mais nada para entregar além dela e de um e-mail. Esse e-mail
 — o de "esqueci a senha" — passa a sair dentro da própria requisição, por
@@ -47,6 +49,7 @@ suficiente para não caber numa requisição, os três serviços voltam com ela.
 | `DJANGO_SUPERUSER_PASSWORD` | senha do admin inicial |
 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | conta SMTP (sem elas, nenhum e-mail sai — inclusive o de "esqueci a senha") |
 | `DEFAULT_FROM_EMAIL` | opcional |
+| `PROXY_SEGREDO` | gere um: `openssl rand -hex 32`. **O mesmo** no recurso do front |
 
 O banco não tem variável de endereço: `DB_HOST=db` é fixo no compose, porque só
 faz sentido dentro desta rede.
@@ -84,6 +87,7 @@ Outro recurso **Docker Compose**, apontando para o repositório do front.
 | Variável | Valor |
 |---|---|
 | `API_PROXY_URL` | `https://api.fechacaixa.io` (sem barra no fim) |
+| `PROXY_SEGREDO` | o mesmo valor do backend |
 
 O navegador nunca fala com o Django: toda chamada sai do próprio domínio do
 front em `/backend/...` e o servidor do Next reescreve (ver `next.config.ts`).
