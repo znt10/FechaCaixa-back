@@ -1,6 +1,44 @@
 """Middleware do projeto."""
 
+import hmac
+
+from django.conf import settings
 from django.http import HttpResponse
+
+
+class IpDoProxyMiddleware:
+    """Poe no X-Forwarded-For o IP do visitante que o Next mandou, SE vier com
+    o segredo certo.
+
+    Todo pedido do navegador chega aqui pelo rewrite /backend do Next, que
+    chama a URL publica da API: Traefik -> Next -> internet -> Traefik ->
+    Django. O ultimo IP da lista e, entao, o do proprio servidor do front, o
+    mesmo para todo visitante, e o limite por IP juntaria o site inteiro num
+    contador so. O Next repassa o IP de verdade em X-Cliente-IP, com o
+    PROXY_SEGREDO em X-Proxy-Segredo.
+
+    Sem o segredo o cabecalho e ignorado e vale o que o Traefik escreveu no
+    fim da lista (NUM_PROXIES = 1). Os dois sao apagados de qualquer jeito,
+    para nenhuma view ler um valor que veio de fora.
+    """
+
+    IP = "HTTP_X_CLIENTE_IP"
+    SEGREDO = "HTTP_X_PROXY_SEGREDO"
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request) -> HttpResponse:
+        ip = request.META.pop(self.IP, "").strip()
+        recebido = request.META.pop(self.SEGREDO, "")
+        # Lido a cada pedido, e nao no __init__: trocar o segredo no ambiente
+        # tem que valer sem depender de quando o worker subiu.
+        segredo = settings.PROXY_SEGREDO
+        # compare_digest em bytes: com str ele lanca TypeError para texto nao
+        # ASCII, e um cabecalho forjado viraria 500 em vez de ser ignorado.
+        if segredo and ip and hmac.compare_digest(recebido.encode(), segredo.encode()):
+            request.META["HTTP_X_FORWARDED_FOR"] = ip
+        return self.get_response(request)
 
 
 class SemCacheNaApi:

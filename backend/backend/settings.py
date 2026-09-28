@@ -57,6 +57,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Antes de tudo: quem vier depois ja le o IP do visitante, e nao o do
+    # servidor do front.
+    "app.middleware.IpDoProxyMiddleware",
     # Primeiro da lista: na resposta o Django percorre a lista ao contrario,
     # entao daqui ele carimba por ultimo e ganha de qualquer Cache-Control
     # que tenha sido posto mais abaixo.
@@ -174,6 +177,23 @@ CSRF_COOKIE_SECURE = not DEBUG
 # responde primeiro, com a mensagem certa.
 DATA_UPLOAD_MAX_NUMBER_FILES = 600
 
+# O contador dos throttles mora no cache. Sem Redis ele e o LocMemCache, um
+# por processo: com os 3 workers do gunicorn cada IP tinha tres contadores, e
+# o limite valia o triplo. Sem a variavel (testes, dev) fica o LocMem mesmo.
+_cache_redis = os.getenv("CACHE_REDIS_URL", "")
+CACHES = {
+    "default": (
+        {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": _cache_redis}
+        if _cache_redis
+        else {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
+    )
+}
+
+# Igual ao PROXY_SEGREDO do front: com ele, o Django aceita o IP do visitante
+# que o Next repassa (ver app.middleware.IpDoProxyMiddleware). Vazio = nenhum
+# cabecalho do Next e aceito.
+PROXY_SEGREDO = os.getenv("PROXY_SEGREDO", "")
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "app.authentication.CookieJWTAuthentication",
@@ -195,6 +215,11 @@ REST_FRAMEWORK = {
         "acesso-formulario-min": "5/min",
         "acesso-formulario-hora": "20/hour",
     },
+    # Um proxy na frente (o Traefik do Coolify): o IP que vale e o ULTIMO do
+    # X-Forwarded-For, o que ele acrescentou. Com o padrao (None) o DRF usava
+    # o cabecalho inteiro como identidade, e quem mandasse um valor novo a
+    # cada pedido ganhava um contador novo a cada pedido.
+    "NUM_PROXIES": 1,
 }
 
 SIMPLE_JWT = {
