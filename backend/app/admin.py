@@ -1,8 +1,13 @@
 from django.contrib import admin
 
 from .models import (
+    CategoriaDeMovimento,
     CategoriaDeSalgado,
     Conta,
+    ContaBancaria,
+    ImportacaoDeExtrato,
+    RegraDeClassificacao,
+    TransacaoBancaria,
     Consumo,
     ElementoDeDespesa,
     Encarregado,
@@ -312,3 +317,51 @@ class DesperdicioAdmin(admin.ModelAdmin):
     @admin.display(description="Dia", ordering="fechamento__data")
     def dia(self, desperdicio):
         return desperdicio.fechamento.data
+
+
+# O extrato bancario. As transacoes e as importacoes sao prova, como a nota:
+# o que veio do banco fica preso, e so a classificacao se mexe.
+@admin.register(ContaBancaria)
+class ContaBancariaAdmin(admin.ModelAdmin):
+    list_display = ("__str__", "banco", "agencia", "numero", "ativo")
+    list_filter = ("loja__conta", "banco", "ativo")
+    search_fields = ("numero", "apelido", "loja__nome_loja")
+    list_select_related = ("loja",)
+
+
+@admin.register(CategoriaDeMovimento)
+class CategoriaDeMovimentoAdmin(admin.ModelAdmin):
+    list_display = ("nome", "tipo", "conta", "entre_lojas", "ativo")
+    list_filter = ("conta", "tipo", "ativo")
+
+
+@admin.register(ImportacaoDeExtrato)
+class ImportacaoDeExtratoAdmin(admin.ModelAdmin):
+    list_display = (
+        "nome_do_arquivo", "conta_bancaria", "novas", "repetidas", "created_at",
+    )
+    list_filter = ("conta_bancaria__loja__conta",)
+    readonly_fields = (
+        "conta_bancaria", "nome_do_arquivo", "conteudo_bruto", "enviada_por",
+        "novas", "repetidas", "periodo_de", "periodo_ate",
+    )
+
+
+@admin.register(TransacaoBancaria)
+class TransacaoBancariaAdmin(admin.ModelAdmin):
+    list_display = ("data", "descricao", "valor", "conta_bancaria", "tipo")
+    list_filter = ("conta", "tipo")
+    search_fields = ("descricao",)
+    date_hierarchy = "data"
+    list_select_related = ("conta_bancaria__loja",)
+    readonly_fields = (
+        "conta", "conta_bancaria", "importacao", "data", "valor", "descricao",
+        "id_do_banco", "chave", "assinatura", "par",
+    )
+
+
+@admin.register(RegraDeClassificacao)
+class RegraDeClassificacaoAdmin(admin.ModelAdmin):
+    list_display = ("assinatura", "entrada", "tipo", "elemento", "categoria", "conta")
+    list_filter = ("conta", "tipo")
+    search_fields = ("assinatura",)

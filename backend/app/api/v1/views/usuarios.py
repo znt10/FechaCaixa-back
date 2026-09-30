@@ -82,6 +82,11 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         tem_catalogo = request.user.is_superuser or bool(
             conta and conta.catalogo_ativo
         )
+        # O que a empresa contratou, como as outras duas. Que so a gerencia
+        # ve o banco e regra do cargo, e a tela ja sabe o cargo pelo `group`.
+        tem_banco = request.user.is_superuser or bool(
+            conta and conta.modulo_banco_ativo
+        )
 
         return Response({
             "id": request.user.id,
@@ -91,6 +96,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             "modulos": {
                 "notas_fiscais": tem_notas,
                 "catalogo": tem_catalogo,
+                "banco": tem_banco,
             },
         })
 

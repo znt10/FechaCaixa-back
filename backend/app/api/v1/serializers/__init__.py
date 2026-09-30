@@ -4,6 +4,12 @@ Todos os nomes continuam importaveis de `app.api.v1.serializers`.
 """
 
 from .acesso import AcessoAoFormularioSerializer, EmpresaDoFormularioSerializer
+from .banco import (
+    CategoriaDeMovimentoSerializer,
+    ClassificacaoDaTransacaoSerializer,
+    ContaBancariaSerializer,
+    TransacaoBancariaSerializer,
+)
 from .catalogo_de_salgados import CategoriaDeSalgadoSerializer, SalgadoSerializer
 from .contas import ContaSerializer
 from .fechamentos import (
@@ -30,7 +36,10 @@ from .usuarios import UsuarioSerializer
 
 __all__ = [
     "AcessoAoFormularioSerializer",
+    "CategoriaDeMovimentoSerializer",
     "CategoriaDeSalgadoSerializer",
+    "ClassificacaoDaTransacaoSerializer",
+    "ContaBancariaSerializer",
     "ContaSerializer",
     "ConsumoDoTurnoSerializer",
     "ConsumoLidoSerializer",
@@ -50,5 +59,6 @@ __all__ = [
     "NotaFiscalSerializer",
     "ResponsavelRetiradaSerializer",
     "SalgadoSerializer",
+    "TransacaoBancariaSerializer",
     "UsuarioSerializer",
 ]

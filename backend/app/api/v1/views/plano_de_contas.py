@@ -10,14 +10,14 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 
 from app.models import ElementoDeDespesa, GrupoDeDespesa
-from app.permissions import ModuloDeNotasAtivo, get_conta_do_usuario
+from app.permissions import UsaOPlanoDeContas, get_conta_do_usuario
 from app.services.plano_de_contas import garantir_plano_de_contas
 
 from ..serializers import ElementoDeDespesaSerializer, GrupoDeDespesaSerializer
 
 
 class PlanoDeContasMixin:
-    permission_classes = [IsAuthenticated, ModuloDeNotasAtivo]
+    permission_classes = [IsAuthenticated, UsaOPlanoDeContas]
     lookup_field = "public_id"
     # Sem paginacao: o plano de contas de uma empresa tem dezenas de linhas e a
     # tela mostra todas num seletor. Paginar aqui repetiria o bug que a lista de

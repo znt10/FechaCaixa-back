@@ -55,6 +55,10 @@ class Conta(BaseModel):
     # ligado uma conta por vez, comecando pela que aceitou testar.
     modulo_notas_ativo = models.BooleanField(default=False)
 
+    # Liga o extrato bancario, pelo mesmo motivo do de cima: e dado de banco
+    # de terceiro, e cada empresa entra quando aceitar, uma por vez.
+    modulo_banco_ativo = models.BooleanField(default=False)
+
     # O formulario sob medida. O FechaCaixa nasceu numa rede de salgados e
     # perguntava de salgado para todo mundo; quem vende outra coisa (ou nao
     # tem retirada, ou nao da lanche para a equipe) respondia "nao" toda noite
@@ -999,3 +1003,287 @@ class Desperdicio(BaseModel):
 
     def __str__(self):
         return f"{self.salgado.nome} x{self.quantidade} - {self.fechamento.data}"
+
+
+class ContaBancaria(BaseModel):
+    """Uma conta de banco de uma loja: o Santander da loja do centro, o Inter
+    da de Pirituba.
+
+    Pendurada na loja e nao na conta (empresa): a conta bancaria e do CNPJ, e
+    o CNPJ e da loja. A empresa vem pela loja, sem FK propria, pelo mesmo
+    motivo do ElementoDeDespesa — duas fontes para a mesma verdade divergem.
+
+    Nao se apaga pela API, so se desativa: o extrato importado pendura aqui, e
+    extrato lancado e contabilidade.
+    """
+
+    class Banco(models.TextChoices):
+        SANTANDER = "SANTANDER", "Santander"
+        BANCO_DO_BRASIL = "BANCO_DO_BRASIL", "Banco do Brasil"
+        ITAU = "ITAU", "Itaú"
+        BRADESCO = "BRADESCO", "Bradesco"
+        CAIXA = "CAIXA", "Caixa"
+        INTER = "INTER", "Inter"
+        NUBANK = "NUBANK", "Nubank"
+        PICPAY = "PICPAY", "PicPay"
+        OUTRO = "OUTRO", "Outro"
+
+    # PROTECT: apagar a loja levaria o extrato junto. Quem explica a recusa e
+    # o destroy do LojaViewSet.
+    loja = models.ForeignKey(
+        Loja, on_delete=models.PROTECT, related_name="contas_bancarias"
+    )
+    banco = models.CharField(max_length=20, choices=Banco.choices)
+    agencia = models.CharField(max_length=10, blank=True)
+    # Com o digito, do jeito que a gerente copia do app do banco. E ele que
+    # confere se o OFX subido e mesmo desta conta.
+    numero = models.CharField(max_length=20)
+    apelido = models.CharField(max_length=60, blank=True)
+    ativo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["loja__nome_loja", "banco", "numero"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["loja", "banco", "agencia", "numero"],
+                name="conta_bancaria_unica_por_loja",
+            )
+        ]
+
+    @property
+    def conta(self):
+        return self.loja.conta
+
+    def __str__(self):
+        nome = self.apelido or f"{self.get_banco_display()} {self.numero}"
+        return f"{self.loja.nome_loja} - {nome}"
+
+
+class TipoDeMovimento(models.TextChoices):
+    """As tres perguntas que a gerencia faz ao extrato.
+
+    Fora de um modelo porque transacao, categoria e regra usam o mesmo
+    conjunto, e tres copias do choices divergiriam.
+    """
+
+    PAGAMENTO = "PAGAMENTO", "Pagamento"
+    TRANSFERENCIA = "TRANSFERENCIA", "Transferência"
+    RECEBIMENTO = "RECEBIMENTO", "Recebimento"
+
+
+class CategoriaDeMovimento(BaseModel):
+    """A categoria de uma transferencia ou de um recebimento.
+
+    Pagamento nao tem categoria aqui: ele usa o plano de contas das notas
+    (ElementoDeDespesa), para que o aluguel pago no banco e o aluguel da nota
+    caiam na mesma linha do relatorio. Transferencia e recebimento nao sao
+    despesa, e por isso nao cabem naquele plano.
+
+    Por conta e nao `choices`, pelo mesmo motivo do GrupoDeDespesa: cada
+    empresa separa do jeito dela.
+    """
+
+    conta = models.ForeignKey(
+        Conta, on_delete=models.CASCADE, related_name="categorias_de_movimento"
+    )
+    tipo = models.CharField(
+        max_length=15,
+        choices=[
+            (TipoDeMovimento.TRANSFERENCIA, TipoDeMovimento.TRANSFERENCIA.label),
+            (TipoDeMovimento.RECEBIMENTO, TipoDeMovimento.RECEBIMENTO.label),
+        ],
+    )
+    nome = models.CharField(max_length=60)
+    ativo = models.BooleanField(default=True)
+
+    # A categoria que o sistema usa sozinho quando acha as duas pontas de uma
+    # transferencia entre lojas da empresa. Marcada, e nao achada pelo nome:
+    # a gerente pode renomear "Entre lojas" e o pareamento nao pode parar.
+    # No consolidado, o que cai aqui sai da conta — o dinheiro so mudou de
+    # bolso dentro da empresa.
+    entre_lojas = models.BooleanField(default=False, editable=False)
+
+    class Meta:
+        ordering = ["tipo", "nome"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["conta", "tipo", "nome"],
+                name="categoria_de_movimento_unica_por_conta",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} > {self.nome}"
+
+
+class ImportacaoDeExtrato(BaseModel):
+    """Um arquivo de extrato subido, e o que ele trouxe de novo.
+
+    Guarda o arquivo inteiro pelo mesmo motivo do `xml_bruto` da nota: o disco
+    do container e efemero, e o original e a prova de onde a transacao veio.
+    """
+
+    conta_bancaria = models.ForeignKey(
+        ContaBancaria, on_delete=models.PROTECT, related_name="importacoes"
+    )
+    nome_do_arquivo = models.CharField(max_length=255)
+    conteudo_bruto = models.TextField()
+    enviada_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="extratos_enviados",
+    )
+    novas = models.PositiveIntegerField(default=0)
+    repetidas = models.PositiveIntegerField(default=0)
+    periodo_de = models.DateField(null=True, blank=True)
+    periodo_ate = models.DateField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.nome_do_arquivo} - {self.novas} novas"
+
+
+class TransacaoBancaria(BaseModel):
+    """Uma linha do extrato de uma conta bancaria.
+
+    Nasce sem tipo, que e a fila de trabalho da tela, como a nota sem
+    elemento. O tipo decide a categoria: Pagamento usa `elemento` (o plano de
+    contas das notas), Transferencia e Recebimento usam `categoria`. Quem
+    garante que as duas nunca estao preenchidas juntas e
+    app.services.extratos.classificar, que e o unico caminho de escrita.
+    """
+
+    # Denormalizada pelo mesmo motivo da NotaFiscal: toda listagem filtra por
+    # conta, e sem o campo seriam duas joins (conta bancaria, loja) em cada
+    # uma.
+    conta = models.ForeignKey(
+        Conta, on_delete=models.CASCADE, related_name="transacoes_bancarias"
+    )
+    conta_bancaria = models.ForeignKey(
+        ContaBancaria, on_delete=models.PROTECT, related_name="transacoes"
+    )
+    # SET_NULL e nao obrigatoria: a transacao que vier da API do banco, mais
+    # para frente, nao tera arquivo.
+    importacao = models.ForeignKey(
+        ImportacaoDeExtrato,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="transacoes",
+    )
+
+    data = models.DateField()
+    # Com sinal, como o banco manda: negativo e saida. Um campo "entrada ou
+    # saida" ao lado seria uma segunda fonte para a mesma verdade.
+    valor = models.DecimalField(max_digits=12, decimal_places=2)
+    descricao = models.CharField(max_length=255)
+    # O FITID do OFX, so para consulta. NAO e a chave de repeticao: ha banco
+    # que gera um FITID novo a cada exportacao do mesmo periodo.
+    id_do_banco = models.CharField(max_length=255, blank=True)
+
+    # O que impede a mesma transacao de entrar duas vezes: data, valor e
+    # descricao, mais qual repeticao ela e dentro do arquivo. Ver
+    # app.services.extratos.importar.
+    chave = models.CharField(max_length=80)
+    # A descricao sem numeros, que e por onde a regra aprendida acha a
+    # transacao. Gravada, e nao calculada, para "aplicar as iguais" ser um
+    # UPDATE so. Ver `assinatura_da_descricao`.
+    assinatura = models.CharField(max_length=255, blank=True)
+
+    tipo = models.CharField(
+        max_length=15, choices=TipoDeMovimento.choices, null=True, blank=True
+    )
+    elemento = models.ForeignKey(
+        ElementoDeDespesa,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="transacoes_bancarias",
+    )
+    categoria = models.ForeignKey(
+        CategoriaDeMovimento,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="transacoes",
+    )
+
+    # A outra ponta de uma transferencia entre lojas: a saida da Loja A aponta
+    # para a entrada da Loja B, e a entrada aponta de volta. OneToOne porque
+    # uma ponta so tem um par. related_name="+" porque a volta e o proprio
+    # campo do outro lado.
+    par = models.OneToOneField(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+
+    class Meta:
+        ordering = ["-data", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["conta_bancaria", "chave"],
+                name="transacao_unica_por_conta_bancaria",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["conta", "data"]),
+            models.Index(fields=["conta_bancaria", "data"]),
+            models.Index(fields=["conta", "assinatura"]),
+        ]
+
+    @property
+    def entrada(self):
+        return self.valor > 0
+
+    @property
+    def classificada(self):
+        return self.tipo is not None
+
+    def __str__(self):
+        return f"{self.data} {self.descricao} {self.valor}"
+
+
+class RegraDeClassificacao(BaseModel):
+    """O que a gerente respondeu da ultima vez para esta descricao.
+
+    Mesma regra de "nao digitar duas vezes" do `Fornecedor.elemento_sugerido`:
+    classificou "PIX ENVIADO DISTRIBUIDORA X" como Pagamento > Embalagem, e a
+    proxima linha com essa descricao ja chega classificada.
+
+    A chave e a descricao sem numeros (ver `assinatura_da_descricao`): o banco
+    poe data e documento no meio do texto, e com eles cada linha seria uma
+    regra diferente.
+    """
+
+    conta = models.ForeignKey(
+        Conta, on_delete=models.CASCADE, related_name="regras_de_classificacao"
+    )
+    assinatura = models.CharField(max_length=255)
+    # Entrada e saida sao regras separadas: o que a gerente disse de um "PIX
+    # FULANO" que saiu nao vale para um "PIX FULANO" que entrou — um Pagamento
+    # aprendido nunca pode classificar dinheiro recebido.
+    entrada = models.BooleanField()
+    tipo = models.CharField(max_length=15, choices=TipoDeMovimento.choices)
+    elemento = models.ForeignKey(
+        ElementoDeDespesa, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="+",
+    )
+    categoria = models.ForeignKey(
+        CategoriaDeMovimento, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        ordering = ["assinatura"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["conta", "assinatura", "entrada"],
+                name="regra_unica_por_conta",
+            )
+        ]
+
+    def __str__(self):
+        return self.assinatura

@@ -2,7 +2,9 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    CategoriaDeMovimentoViewSet,
     CategoriaDeSalgadoViewSet,
+    ContaBancariaViewSet,
     ContaViewSet,
     ElementoDeDespesaViewSet,
     EncarregadoViewSet,
@@ -12,6 +14,7 @@ from .views import (
     NotaFiscalViewSet,
     ResponsavelRetiradaViewSet,
     SalgadoViewSet,
+    TransacaoBancariaViewSet,
     UsuarioViewSet,
 )
 from .views.acesso import (
@@ -57,6 +60,19 @@ router.register(
     basename="categorias-de-salgado",
 )
 router.register(r"salgados", SalgadoViewSet, basename="salgados")
+router.register(
+    r"contas-bancarias", ContaBancariaViewSet, basename="contas-bancarias"
+)
+router.register(
+    r"categorias-de-movimento",
+    CategoriaDeMovimentoViewSet,
+    basename="categorias-de-movimento",
+)
+router.register(
+    r"transacoes-bancarias",
+    TransacaoBancariaViewSet,
+    basename="transacoes-bancarias",
+)
 
 urlpatterns = router.urls + [
     # A dona fecha o mes na planilha: o painel responde na tela, mas o desconto

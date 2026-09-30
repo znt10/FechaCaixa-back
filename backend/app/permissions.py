@@ -223,3 +223,50 @@ class ModuloDeNotasAtivo(BasePermission):
 
         conta = get_conta_do_usuario(user)
         return bool(conta and conta.modulo_notas_ativo)
+
+
+class ModuloDeBancoAtivo(BasePermission):
+    """Barra quem nao tem o extrato bancario ligado na conta.
+
+    Mesmo desenho do ModuloDeNotasAtivo. O cargo (so a gerencia ve o banco)
+    fica com IsGerenteOrAdministrador, ao lado desta nas views: sao duas
+    perguntas diferentes, "a empresa contratou" e "esta pessoa pode ver".
+    """
+
+    message = "O módulo de extrato bancário não está ativo para esta empresa."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return True
+
+        conta = get_conta_do_usuario(user)
+        return bool(conta and conta.modulo_banco_ativo)
+
+
+class UsaOPlanoDeContas(BasePermission):
+    """O plano de contas serve aos dois modulos: a nota e classificada nele, e
+    o pagamento do extrato tambem — o aluguel pago no banco e o aluguel da
+    nota caem na mesma linha.
+
+    Com notas, vale para quem ja alcanca as notas; so com o banco, para a
+    gerencia, que e quem alcanca o extrato.
+    """
+
+    message = "O plano de contas é dos módulos de notas fiscais e de extrato bancário."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return True
+
+        conta = get_conta_do_usuario(user)
+        if conta is None:
+            return False
+        if conta.modulo_notas_ativo:
+            return True
+        return conta.modulo_banco_ativo and is_gerente_ou_admin(user)
