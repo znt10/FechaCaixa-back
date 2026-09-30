@@ -7,6 +7,11 @@ app.api.v1.views sem conhecer o modulo interno de cada viewset.
 # Reexport direto de app.permissions: tests/test_permissoes.py confere com
 # assertIs que estes nomes sao os mesmos objetos de la.
 from app.permissions import get_user_group_name, is_gerente_ou_admin
+from .banco import (
+    CategoriaDeMovimentoViewSet,
+    ContaBancariaViewSet,
+    TransacaoBancariaViewSet,
+)
 from .catalogo_de_salgados import CategoriaDeSalgadoViewSet, SalgadoViewSet
 from .contas import ContaViewSet
 from .fechamentos import (
@@ -23,7 +28,9 @@ from .plano_de_contas import (
 from .usuarios import UsuarioViewSet
 
 __all__ = [
+    "CategoriaDeMovimentoViewSet",
     "CategoriaDeSalgadoViewSet",
+    "ContaBancariaViewSet",
     "ContaViewSet",
     "ElementoDeDespesaViewSet",
     "EncarregadoViewSet",
@@ -33,6 +40,7 @@ __all__ = [
     "NotaFiscalViewSet",
     "ResponsavelRetiradaViewSet",
     "SalgadoViewSet",
+    "TransacaoBancariaViewSet",
     "UsuarioViewSet",
     "get_user_group_name",
     "is_gerente_ou_admin",

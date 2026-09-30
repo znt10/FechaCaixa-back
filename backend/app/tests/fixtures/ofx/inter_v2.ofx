@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?OFX OFXHEADER="200" VERSION="220" SECURITY="NONE" OLDFILEUID="NONE" NEWFILEUID="NONE"?>
+<OFX>
+  <BANKMSGSRSV1>
+    <STMTTRNRS>
+      <STMTRS>
+        <CURDEF>BRL</CURDEF>
+        <BANKACCTFROM>
+          <BANKID>077</BANKID>
+          <ACCTID>98765-4</ACCTID>
+          <ACCTTYPE>CHECKING</ACCTTYPE>
+        </BANKACCTFROM>
+        <BANKTRANLIST>
+          <DTSTART>20261001</DTSTART>
+          <DTEND>20261005</DTEND>
+          <STMTTRN>
+            <TRNTYPE>CREDIT</TRNTYPE>
+            <DTPOSTED>20261002</DTPOSTED>
+            <TRNAMT>500.00</TRNAMT>
+            <FITID>abc-1</FITID>
+            <NAME>Pix recebido</NAME>
+            <MEMO>Loja A Comércio</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20261004</DTPOSTED>
+            <TRNAMT>-500.00</TRNAMT>
+            <FITID>abc-2</FITID>
+            <MEMO>Aluguel</MEMO>
+          </STMTTRN>
+        </BANKTRANLIST>
+      </STMTRS>
+    </STMTTRNRS>
+  </BANKMSGSRSV1>
+</OFX>

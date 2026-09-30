@@ -115,20 +115,19 @@ class LojaViewSet(viewsets.ModelViewSet):
         serializer.save(conta=conta)
 
     def destroy(self, request, *args, **kwargs):
-        # O ProtectedError era da MovimentacaoEstoque, que saiu com o Unistock.
-        # Nenhuma FK protege a Loja hoje — quem a segura e o caixa lancado, e
-        # essa recusa esta no perform_destroy, com mensagem propria. O except
-        # fica como rede: se alguem criar uma FK PROTECT amanha, o erro sai
-        # explicado em vez de 500.
+        # Quem segura a loja pelo banco sao as FKs PROTECT: a nota fiscal e a
+        # conta bancaria. O caixa lancado tem recusa propria, no
+        # perform_destroy. A mensagem fala das duas porque o ProtectedError
+        # nao diz qual das FKs barrou.
         try:
             return super().destroy(request, *args, **kwargs)
         except ProtectedError:
             return Response(
                 {
                     "error": (
-                        "Esta loja tem historico de movimentacao de estoque e "
-                        "nao pode ser excluida. Edite a loja e marque-a como "
-                        "inativa em vez de exclui-la."
+                        "Esta loja tem notas fiscais ou contas bancarias "
+                        "ligadas a ela e nao pode ser excluida. Edite a loja e "
+                        "marque-a como inativa em vez de exclui-la."
                     )
                 },
                 status=status.HTTP_409_CONFLICT,
