@@ -13,6 +13,7 @@ from .views import (
     GrupoDeDespesaViewSet,
     LojaViewSet,
     NotaFiscalViewSet,
+    RemetenteDeComprovanteViewSet,
     ResponsavelRetiradaViewSet,
     SalgadoViewSet,
     TransacaoBancariaViewSet,
@@ -47,6 +48,11 @@ router.register(
 )
 router.register(r"user", UsuarioViewSet)
 router.register(r"comprovantes", ComprovanteViewSet, basename="comprovantes")
+router.register(
+    r"remetentes-de-comprovante",
+    RemetenteDeComprovanteViewSet,
+    basename="remetentes-de-comprovante",
+)
 router.register(r"notas-fiscais", NotaFiscalViewSet, basename="notas-fiscais")
 router.register(
     r"grupos-de-despesa", GrupoDeDespesaViewSet, basename="grupos-de-despesa"

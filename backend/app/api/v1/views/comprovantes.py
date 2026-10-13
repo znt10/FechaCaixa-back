@@ -1,27 +1,33 @@
 import datetime
+import os
 import uuid
 from decimal import Decimal
 
-from django.db.models import Count, DecimalField, Q, Sum, Value
+from django.conf import settings
+from django.db.models import DecimalField, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from app.models import Comprovante
+from app.models import Comprovante, Loja, RemetenteDeComprovante
 from app.permissions import (
     IsGerenteOrAdministrador,
     ModuloDeComprovantesAtivo,
     get_conta_do_usuario,
 )
+from app.services.comprovantes.arquivo import TIPOS_ACEITOS
 from app.services.comprovantes.categoria import aprender_categoria
+from app.services.comprovantes.leitura import ler_arquivo
 from app.services.comprovantes.normalizar import normalizar_nome
+from app.services.comprovantes.registrar import registrar_comprovante
 
-from ..serializers import ComprovanteSerializer
+from ..serializers import ComprovanteSerializer, RemetenteDeComprovanteSerializer
 
 ZERO = Decimal("0.00")
 DINHEIRO = DecimalField(max_digits=16, decimal_places=2)
@@ -65,6 +71,13 @@ def _somar(queryset):
     }
 
 
+def _uuid_ou_400(texto):
+    try:
+        return uuid.UUID(str(texto))
+    except ValueError:
+        raise ValidationError({"error": "O parametro 'loja' deve ser um UUID valido."})
+
+
 class PaginacaoDeComprovantes(PageNumberPagination):
     def get_paginated_response(self, data):
         resposta = super().get_paginated_response(data)
@@ -86,6 +99,7 @@ class ComprovanteViewSet(
     pagination_class = PaginacaoDeComprovantes
     lookup_field = "public_id"
     http_method_names = ["get", "patch", "post", "head", "options"]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def get_queryset(self):
         base = Comprovante.objects.select_related("loja", "elemento").defer("arquivo")
@@ -178,3 +192,75 @@ class ComprovanteViewSet(
         resposta = HttpResponse(bytes(comprovante.arquivo), content_type=comprovante.arquivo_tipo)
         resposta["Content-Disposition"] = f'inline; filename="{comprovante.arquivo_nome}"'
         return resposta
+
+    @action(detail=False, methods=["post"])
+    def enviar(self, request):
+        """Um arquivo pelo site: lido na hora e devolvido para a pessoa conferir."""
+        conta = get_conta_do_usuario(request.user)
+        if conta is None:
+            return Response({"error": "Este usuario nao esta vinculado a uma empresa."}, status=403)
+
+        arquivo = request.FILES.get("arquivo")
+        if arquivo is None:
+            raise ValidationError({"error": "Escolha o arquivo do comprovante."})
+        if arquivo.content_type not in TIPOS_ACEITOS:
+            raise ValidationError(
+                {"error": "Envie o comprovante em PDF, PNG, JPG ou WEBP. "
+                          "No iPhone, tire um print da foto e envie o print."}
+            )
+
+        loja = None
+        if request.data.get("loja"):
+            loja = Loja.objects.filter(
+                conta=conta, public_id=_uuid_ou_400(request.data["loja"])
+            ).first()
+            if loja is None:
+                raise ValidationError({"error": "Esta loja nao existe nesta empresa."})
+
+        comprovante = registrar_comprovante(
+            conta,
+            arquivo.read(),
+            arquivo.content_type,
+            arquivo.name,
+            origem=Comprovante.Origem.SITE,
+            enviado_por=request.user,
+            loja=loja,
+            ler=ler_arquivo,
+        )
+        if comprovante is None:
+            return Response({"error": "Este comprovante ja foi lancado."}, status=409)
+        return Response(self.get_serializer(comprovante).data, status=201)
+
+    @action(detail=False, methods=["get"])
+    def configuracao(self, request):
+        return Response({
+            "endereco": settings.COMPROVANTES_EMAIL,
+            "leitura_ligada": bool(os.getenv("ANTHROPIC_API_KEY")),
+        })
+
+
+class RemetenteDeComprovanteViewSet(
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Os e-mails que podem mandar comprovante para a empresa."""
+
+    serializer_class = RemetenteDeComprovanteSerializer
+    permission_classes = PERMISSOES
+    lookup_field = "public_id"
+    pagination_class = None
+
+    def get_queryset(self):
+        conta = get_conta_do_usuario(self.request.user)
+        if conta is None:
+            return RemetenteDeComprovante.objects.none()
+        return RemetenteDeComprovante.objects.filter(conta=conta)
+
+    def perform_create(self, serializer):
+        email = serializer.validated_data["email"].strip().lower()
+        if RemetenteDeComprovante.objects.filter(email=email).exists():
+            # Nao diz de qual empresa: seria vazar cliente para cliente.
+            raise ValidationError({"email": "Este e-mail ja manda comprovante para outra empresa."})
+        serializer.save(conta=get_conta_do_usuario(self.request.user), email=email)
