@@ -176,12 +176,20 @@ class TemAcessoAoFormulario(BasePermission):
     message = "Digite o codigo da empresa para lancar o caixa."
 
     def has_permission(self, request, view):
+        from app.excecoes import EmpresaDesativada
         from app.models import DispositivoDoFormulario
 
         token = request.COOKIES.get("formulario_token")
-        dispositivo = DispositivoDoFormulario.objects.ativo_por_token(token)
+        dispositivo = DispositivoDoFormulario.objects.ativo_por_token(
+            token, com_conta_inativa=True
+        )
         if dispositivo is None:
             return False
+        # O aparelho ja provou o acesso: dizer que a empresa foi desativada
+        # nao entrega nada a quem chuta codigo, e poupa a loja de uma tela de
+        # codigo que nao abre mais.
+        if not dispositivo.conta.ativo:
+            raise EmpresaDesativada()
 
         dispositivo.registrar_uso()
         request.dispositivo_do_formulario = dispositivo

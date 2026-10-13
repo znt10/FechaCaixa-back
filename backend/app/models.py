@@ -660,11 +660,16 @@ class Consumo(BaseModel):
 
 
 class DispositivoDoFormularioQuerySet(models.QuerySet):
-    def ativo_por_token(self, token):
+    def ativo_por_token(self, token, *, com_conta_inativa=False):
         """O aparelho vivo dono deste token, ou None.
 
         Compara pelo hash: o token cru so existe na resposta do acesso e no
         cookie do aparelho. Vazamento do banco nao entrega acesso a ninguem.
+
+        `com_conta_inativa` devolve o aparelho mesmo com a empresa
+        desativada: quem pergunta assim quer dizer "desativada" a um aparelho
+        que ja provou o acesso, em vez de mandar ele digitar um codigo que
+        nao vai abrir.
         """
         if not token:
             return None
@@ -673,16 +678,14 @@ class DispositivoDoFormularioQuerySet(models.QuerySet):
         # e uma instrucao para o navegador, e quem copia o token de dentro de
         # um aparelho manda o valor na mao, sem cookie nenhum.
         nascidos_a_partir_de = timezone.now() - DispositivoDoFormulario.VALIDADE
-        return (
-            self.filter(
-                token_hash=digest,
-                revogado_em__isnull=True,
-                conta__ativo=True,
-                created_at__gte=nascidos_a_partir_de,
-            )
-            .select_related("conta")
-            .first()
-        )
+        filtro = {
+            "token_hash": digest,
+            "revogado_em__isnull": True,
+            "created_at__gte": nascidos_a_partir_de,
+        }
+        if not com_conta_inativa:
+            filtro["conta__ativo"] = True
+        return self.filter(**filtro).select_related("conta").first()
 
 
 class DispositivoDoFormulario(BaseModel):
