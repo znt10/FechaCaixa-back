@@ -50,3 +50,28 @@ class NormalizarTests(SimpleTestCase):
         self.assertTrue(mesma_conta("3991", "13005228-1", "03991", "130052281"))
         self.assertFalse(mesma_conta("3991", "13005228-1", "3991", "13005228-2"))
         self.assertFalse(mesma_conta("3991", "", "3991", ""))
+
+
+class ValorAmbiguoTests(SimpleTestCase):
+    """Revisao final: valor errado somava como OK sem aviso."""
+
+    def test_virgula_de_milhar_no_formato_americano(self):
+        self.assertEqual(valor_decimal("1,234.56"), Decimal("1234.56"))
+
+    def test_tres_digitos_depois_do_separador_e_milhar(self):
+        # Dinheiro nao tem tres casas: "1.500" e mil e quinhentos.
+        self.assertEqual(valor_decimal("1.500"), Decimal("1500.00"))
+        self.assertEqual(valor_decimal("R$ 1.500"), Decimal("1500.00"))
+        self.assertEqual(valor_decimal("1,500"), Decimal("1500.00"))
+        self.assertEqual(valor_decimal("1.234.567,89"), Decimal("1234567.89"))
+
+    def test_uma_casa_decimal(self):
+        self.assertEqual(valor_decimal("12.5"), Decimal("12.50"))
+
+    def test_separadores_sem_sentido_viram_none(self):
+        self.assertIsNone(valor_decimal("1.2.3"))
+        self.assertIsNone(valor_decimal("1,2,3"))
+
+    def test_valor_que_nao_cabe_no_campo_vira_none(self):
+        # Linha digitavel de boleto lida como valor estouraria o DECIMAL(12,2) do MySQL.
+        self.assertIsNone(valor_decimal("12345678901.00"))

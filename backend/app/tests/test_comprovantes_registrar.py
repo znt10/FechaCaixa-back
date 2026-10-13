@@ -169,6 +169,12 @@ class RegistrarTests(TestCase):
         )
         self.assertEqual(self.registrar().elemento, aluguel)
 
+    def test_id_com_espaco_ou_quebra_de_linha_e_o_mesmo_id(self):
+        """Revisao final: o ID do PicPay vem quebrado em duas linhas no PDF."""
+        self.registrar(leitura(id_transacao="E00000000202610130000aaaa0001"))
+        self.assertIsNone(self.registrar(leitura(id_transacao="E00000000202610130000aaaa 0001")))
+        self.assertIsNone(self.registrar(leitura(id_transacao="E00000000202610130000aaaa\n0001")))
+
     def test_id_igual_ao_mesmo_tempo_nao_estoura(self):
         """Foco da revisao 5: site e e-mail gravando o mesmo ID juntos."""
         with mock.patch(

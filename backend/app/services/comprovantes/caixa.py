@@ -57,6 +57,7 @@ class ResumoDaLeitura:
     emails: int = 0
     comprovantes: int = 0
     ignorados: int = 0
+    falhas: int = 0
 
 
 def ler_caixa(caixa, ler=ler_arquivo):
@@ -73,13 +74,23 @@ def ler_caixa(caixa, ler=ler_arquivo):
 
     resumo = ResumoDaLeitura()
     for uid in caixa.uids_depois_de(estado.ultimo_uid):
-        mensagem = email.message_from_bytes(caixa.baixar(uid), policy=policy.default)
+        # Baixar fica fora do try: rede caindo aborta a volta, e o e-mail volta
+        # na proxima. O que da errado DENTRO do e-mail e problema dele.
+        bruto = caixa.baixar(uid)
         resumo.emails += 1
-        criados = processar_mensagem(mensagem, uid=uid, validade=validade, ler=ler)
-        if criados is None:
-            resumo.ignorados += 1
+        try:
+            mensagem = email.message_from_bytes(bruto, policy=policy.default)
+            criados = processar_mensagem(mensagem, uid=uid, validade=validade, ler=ler)
+        except Exception:
+            # A caixa e uma so: um e-mail ruim preso aqui pararia a entrada de
+            # comprovantes de todas as empresas, tentando de novo a cada volta.
+            logger.exception("Falha no e-mail UID %s da caixa de comprovantes; seguindo.", uid)
+            resumo.falhas += 1
         else:
-            resumo.comprovantes += criados
+            if criados is None:
+                resumo.ignorados += 1
+            else:
+                resumo.comprovantes += criados
         # Depois de cada e-mail, e nao no fim: uma queda no meio perde no
         # maximo o e-mail em andamento, que volta e e deduplicado.
         estado.ultimo_uid = uid
@@ -91,6 +102,51 @@ def remetente_de(mensagem):
     return parseaddr(str(mensagem.get("From", "")))[1].strip().lower()
 
 
+# Apps de banco e o Outlook anexam PDF como application/octet-stream: o tipo
+# sai dos primeiros bytes. So para esse tipo generico; um tipo declarado e
+# outro (text/calendar, por exemplo) continua sendo o que diz.
+ASSINATURAS = [
+    (b"%PDF", "application/pdf"),
+    (b"\x89PNG", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+]
+
+
+def tipo_do_anexo(tipo_declarado, conteudo):
+    if tipo_declarado == "image/jpg":
+        return "image/jpeg"
+    if tipo_declarado in TIPOS_ACEITOS:
+        return tipo_declarado
+    if tipo_declarado != "application/octet-stream":
+        return None
+    for assinatura, tipo in ASSINATURAS:
+        if conteudo.startswith(assinatura):
+            return tipo
+    if conteudo[:4] == b"RIFF" and conteudo[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def remetente_verificado(mensagem, remetente):
+    """O Gmail confirmou que o e-mail veio mesmo de quem diz no From?
+
+    So vale o primeiro Authentication-Results, e so se for do mx.google.com:
+    e o que o Gmail carimbou ao receber. Um cabecalho igual escrito por quem
+    mandou fica abaixo dele e nao conta. Passa com DMARC, ou com DKIM
+    assinado pelo proprio dominio do remetente.
+    """
+    resultados = mensagem.get_all("Authentication-Results") or []
+    if not resultados:
+        return False
+    carimbo = str(resultados[0]).strip().lower()
+    if not carimbo.startswith("mx.google.com"):
+        return False
+    if re.search(r"\bdmarc=pass\b", carimbo):
+        return True
+    dominio = re.escape(remetente.rsplit("@", 1)[-1])
+    return bool(re.search(rf"\bdkim=pass\b[^;]*header\.[id]=@?{dominio}\b", carimbo))
+
+
 def anexos_de(mensagem):
     """(nome, tipo, conteudo) de cada arquivo que pode ser comprovante.
 
@@ -100,10 +156,10 @@ def anexos_de(mensagem):
     for parte in mensagem.walk():
         if parte.is_multipart():
             continue
-        tipo = parte.get_content_type()
-        if tipo not in TIPOS_ACEITOS:
-            continue
         conteudo = parte.get_payload(decode=True) or b""
+        tipo = tipo_do_anexo(parte.get_content_type(), conteudo)
+        if tipo is None:
+            continue
         if tipo.startswith("image/") and len(conteudo) < TAMANHO_MINIMO_DE_IMAGEM:
             continue
         yield parte.get_filename() or f"comprovante.{tipo.split('/')[1]}", tipo, conteudo
@@ -121,6 +177,9 @@ def processar_mensagem(mensagem, *, uid, validade, ler=ler_arquivo):
         return None
 
     message_id = str(mensagem.get("Message-ID") or f"<uid-{validade}-{uid}@fechacaixa>")[:255]
+    # From falsificado (ex-funcionario que sabe o endereco da caixa) entra,
+    # porque nada se perde, mas nao soma sem alguem olhar.
+    verificado = remetente_verificado(mensagem, remetente)
     criados = 0
     for indice, (nome, tipo, conteudo) in enumerate(anexos_de(mensagem)):
         # Ja gravado numa volta que caiu no meio: nem le de novo (custa).
@@ -139,6 +198,11 @@ def processar_mensagem(mensagem, *, uid, validade, ler=ler_arquivo):
             indice_anexo=indice,
             ler=ler,
         )
-        if comprovante is not None:
-            criados += 1
+        if comprovante is None:
+            continue
+        criados += 1
+        if not verificado and comprovante.situacao == Comprovante.Situacao.OK:
+            comprovante.situacao = Comprovante.Situacao.CONFERIR
+            comprovante.motivo = "Remetente não verificado pelo Gmail: confira antes de somar."
+            comprovante.save(update_fields=["situacao", "motivo", "updated_at"])
     return criados

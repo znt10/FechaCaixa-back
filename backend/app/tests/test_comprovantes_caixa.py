@@ -32,8 +32,16 @@ def leitor(conteudo, tipo):
     return dados
 
 
-def mensagem_de(remetente, anexos=(), message_id="<m1@teste>"):
+VERIFICADO = (
+    "mx.google.com; dkim=pass header.i=@gmail.com header.s=20230601; "
+    "spf=pass smtp.mailfrom=sabrina.lima@gmail.com; dmarc=pass (p=NONE) header.from=gmail.com"
+)
+
+
+def mensagem_de(remetente, anexos=(), message_id="<m1@teste>", autenticacao=VERIFICADO):
     mensagem = EmailMessage()
+    if autenticacao:
+        mensagem["Authentication-Results"] = autenticacao
     mensagem["From"] = remetente
     mensagem["To"] = "caixa@teste.local"
     mensagem["Subject"] = "comprovante"
@@ -169,6 +177,56 @@ class LerCaixaTests(TestCase):
         self.assertEqual((estado.uid_validade, estado.ultimo_uid), (99, 3))
         self.assertFalse(Comprovante.objects.exists())
 
+
+    def test_um_email_com_erro_nao_trava_os_seguintes(self):
+        """Revisao final: um e-mail ruim prendia a caixa de todas as empresas."""
+        ruim = mensagem_de("sabrina.lima@gmail.com", [("a.pdf", "application/pdf", PDF)], "<ruim>")
+        bom = mensagem_de("sabrina.lima@gmail.com", [("b.pdf", "application/pdf", PDF + b"b")], "<bom>")
+
+        def explode_no_primeiro(conteudo, tipo):
+            if conteudo == PDF:
+                raise RuntimeError("inesperado")
+            return leitor(conteudo, tipo)
+
+        resumo = ler_caixa(CaixaFalsa({11: ruim, 12: bom}), ler=explode_no_primeiro)
+
+        self.assertEqual(Comprovante.objects.get().arquivo_nome, "b.pdf")
+        self.assertEqual(resumo.falhas, 1)
+        self.assertEqual(LeituraDaCaixa.objects.get(pk=1).ultimo_uid, 12)
+
+    def test_remetente_nao_verificado_entra_para_conferir(self):
+        """Revisao final: From falsificado nao pode somar sem alguem olhar."""
+        caixa = CaixaFalsa({
+            11: mensagem_de("sabrina.lima@gmail.com", [("a.pdf", "application/pdf", PDF)], autenticacao=None)
+        })
+        ler_caixa(caixa, ler=leitor)
+        comprovante = Comprovante.objects.get()
+        self.assertEqual(comprovante.situacao, Comprovante.Situacao.CONFERIR)
+        self.assertIn("não verificado", comprovante.motivo)
+
+    def test_autenticacao_falsa_de_outro_servidor_nao_vale(self):
+        falsa = "servidor.qualquer; dmarc=pass header.from=gmail.com"
+        caixa = CaixaFalsa({
+            11: mensagem_de("sabrina.lima@gmail.com", [("a.pdf", "application/pdf", PDF)], autenticacao=falsa)
+        })
+        ler_caixa(caixa, ler=leitor)
+        self.assertEqual(Comprovante.objects.get().situacao, Comprovante.Situacao.CONFERIR)
+
+    def test_remetente_verificado_entra_ok(self):
+        caixa = CaixaFalsa({11: mensagem_de("sabrina.lima@gmail.com", [("a.pdf", "application/pdf", PDF)])})
+        ler_caixa(caixa, ler=leitor)
+        self.assertEqual(Comprovante.objects.get().situacao, Comprovante.Situacao.OK)
+
+    def test_pdf_anexado_como_octet_stream_entra_como_pdf(self):
+        """Revisao final: Outlook e apps de banco anexam PDF com tipo generico."""
+        anexos = [("comprovante.pdf", "application/octet-stream", PDF)]
+        ler_caixa(CaixaFalsa({11: mensagem_de("sabrina.lima@gmail.com", anexos)}), ler=leitor)
+        self.assertEqual(Comprovante.objects.get().arquivo_tipo, "application/pdf")
+
+    def test_octet_stream_que_nao_e_pdf_nem_imagem_e_ignorado(self):
+        anexos = [("dados.bin", "application/octet-stream", b"\x00" * 100)]
+        ler_caixa(CaixaFalsa({11: mensagem_de("sabrina.lima@gmail.com", anexos)}), ler=leitor)
+        self.assertFalse(Comprovante.objects.exists())
 
 class ComandoTests(TestCase):
     @override_settings(COMPROVANTES_EMAIL="", COMPROVANTES_SENHA_APP="")

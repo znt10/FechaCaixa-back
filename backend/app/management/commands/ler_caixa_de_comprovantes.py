@@ -57,5 +57,5 @@ class Command(BaseCommand):
             return
         self.stdout.write(
             f"{resumo.emails} e-mails, {resumo.comprovantes} comprovantes, "
-            f"{resumo.ignorados} ignorados."
+            f"{resumo.ignorados} ignorados, {resumo.falhas} com falha."
         )

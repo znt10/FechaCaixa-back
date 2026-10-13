@@ -5,6 +5,8 @@ entra em "conferir" com o motivo escrito. Devolve None so quando ele ja
 existia (mesmo ID de transacao na empresa, ou o mesmo anexo do mesmo e-mail).
 """
 
+import re
+
 from django.db import IntegrityError, transaction
 
 from app.models import Comprovante
@@ -82,7 +84,9 @@ def _aplicar_leitura(comprovante, dados, loja_escolhida):
     comprovante.leitura_bruta = dados
     comprovante.valor = valor_decimal(dados.get("valor"))
     comprovante.data_hora = data_hora(dados.get("data_hora"))
-    comprovante.id_transacao = (dados.get("id_transacao") or "").strip()[:64] or None
+    # Sem espaco nem quebra de linha: o PDF do PicPay quebra o ID em duas
+    # linhas, e a leitura pode trazer o pedaco com ou sem espaco.
+    comprovante.id_transacao = re.sub(r"\s+", "", dados.get("id_transacao") or "")[:64] or None
     for campo, limite in TEXTOS.items():
         setattr(comprovante, campo, (dados.get(campo) or "").strip()[:limite])
     comprovante.recebedor_normalizado = normalizar_nome(comprovante.recebedor_nome)[:200]

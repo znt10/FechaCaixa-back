@@ -13,6 +13,12 @@ from decimal import Decimal, InvalidOperation
 from django.utils import timezone
 
 CENTAVOS = Decimal("0.01")
+# O maior que cabe no DECIMAL(12,2) do campo. Acima disto e leitura errada (a
+# linha digitavel de um boleto, por exemplo), e o MySQL recusaria a gravacao.
+VALOR_MAXIMO = Decimal("9999999999.99")
+# "1.500", "1,500", "1.234.567": separador seguido de grupos de 3 digitos e
+# milhar, porque dinheiro nunca tem tres casas decimais.
+SO_MILHAR = re.compile(r"^\d{1,3}([.,]\d{3})+$")
 
 
 def so_digitos(texto):
@@ -37,18 +43,30 @@ def mesma_conta(agencia_a, conta_a, agencia_b, conta_b):
 
 
 def valor_decimal(texto):
-    """'129.80', 'R$ 1.234,56' ou '15,00' -> Decimal; o resto -> None."""
+    """'129.80', 'R$ 1.234,56', '1,234.56' ou '1.500' -> Decimal; o resto -> None.
+
+    Na duvida, None: o comprovante vai para "conferir". Um valor errado que
+    soma como OK e pior do que um que espera alguem olhar.
+    """
     if texto is None:
         return None
     limpo = re.sub(r"[^\d,.]", "", str(texto))
-    if "," in limpo:
-        # Formato brasileiro: ponto separa milhar, virgula separa centavo.
-        limpo = limpo.replace(".", "").replace(",", ".")
+    if "," in limpo and "." in limpo:
+        # Os dois: o que aparece por ultimo separa os centavos.
+        decimal = "," if limpo.rfind(",") > limpo.rfind(".") else "."
+        milhar = "." if decimal == "," else ","
+        limpo = limpo.replace(milhar, "").replace(decimal, ".")
+    elif SO_MILHAR.match(limpo):
+        limpo = limpo.replace(".", "").replace(",", "")
+    elif limpo.count(",") + limpo.count(".") > 1:
+        return None
+    else:
+        limpo = limpo.replace(",", ".")
     try:
         valor = Decimal(limpo).quantize(CENTAVOS)
     except InvalidOperation:
         return None
-    return valor if valor > 0 else None
+    return valor if Decimal("0") < valor <= VALOR_MAXIMO else None
 
 
 def data_hora(texto):
