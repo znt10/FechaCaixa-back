@@ -198,7 +198,7 @@ PROXY_SEGREDO = os.getenv("PROXY_SEGREDO", "")
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "app.authentication.CookieJWTAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
+        "app.authentication.SessaoComTravaDaMensalidade",
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
