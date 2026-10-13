@@ -13,6 +13,7 @@ from .banco import (
     TransacaoBancariaViewSet,
 )
 from .catalogo_de_salgados import CategoriaDeSalgadoViewSet, SalgadoViewSet
+from .comprovantes import ComprovanteViewSet
 from .contas import ContaViewSet
 from .fechamentos import (
     EncarregadoViewSet,
@@ -28,6 +29,7 @@ from .plano_de_contas import (
 from .usuarios import UsuarioViewSet
 
 __all__ = [
+    "ComprovanteViewSet",
     "CategoriaDeMovimentoViewSet",
     "CategoriaDeSalgadoViewSet",
     "ContaBancariaViewSet",

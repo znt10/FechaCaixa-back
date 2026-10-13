@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     CategoriaDeMovimentoViewSet,
     CategoriaDeSalgadoViewSet,
+    ComprovanteViewSet,
     ContaBancariaViewSet,
     ContaViewSet,
     ElementoDeDespesaViewSet,
@@ -45,6 +46,7 @@ router.register(
     basename="responsaveis-retirada",
 )
 router.register(r"user", UsuarioViewSet)
+router.register(r"comprovantes", ComprovanteViewSet, basename="comprovantes")
 router.register(r"notas-fiscais", NotaFiscalViewSet, basename="notas-fiscais")
 router.register(
     r"grupos-de-despesa", GrupoDeDespesaViewSet, basename="grupos-de-despesa"
