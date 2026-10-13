@@ -182,6 +182,21 @@ class AcoesTests(BaseApi):
         comprovante.refresh_from_db()
         self.assertEqual(comprovante.situacao, DESCARTADO)
 
+    def test_voltar_para_conferir_tira_do_descartado(self):
+        comprovante = self.criar(situacao=DESCARTADO)
+        resposta = self.api.post(f"/api/v1/comprovantes/{comprovante.public_id}/voltar-para-conferir/")
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(resposta.json()["situacao"], CONFERIR)
+        comprovante.refresh_from_db()
+        self.assertEqual(comprovante.situacao, CONFERIR)
+
+    def test_so_volta_para_conferir_quem_foi_descartado(self):
+        comprovante = self.criar(situacao=OK)
+        resposta = self.api.post(f"/api/v1/comprovantes/{comprovante.public_id}/voltar-para-conferir/")
+        self.assertEqual(resposta.status_code, 400)
+        comprovante.refresh_from_db()
+        self.assertEqual(comprovante.situacao, OK)
+
     def test_arquivo_volta_com_o_tipo(self):
         comprovante = self.criar(arquivo=b"%PDF-1.4", arquivo_tipo="application/pdf")
         resposta = self.api.get(f"/api/v1/comprovantes/{comprovante.public_id}/arquivo/")

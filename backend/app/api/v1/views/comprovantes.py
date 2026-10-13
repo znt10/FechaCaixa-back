@@ -181,6 +181,16 @@ class ComprovanteViewSet(
         comprovante.save(update_fields=["situacao", "updated_at"])
         return Response(self.get_serializer(comprovante).data)
 
+    @action(detail=True, methods=["post"], url_path="voltar-para-conferir")
+    def voltar_para_conferir(self, request, public_id=None):
+        """Desfaz um descarte: o comprovante volta para a fila e nao soma ate ser confirmado."""
+        comprovante = self.get_object()
+        if comprovante.situacao != Comprovante.Situacao.DESCARTADO:
+            raise ValidationError("So um comprovante descartado volta para conferir.")
+        comprovante.situacao = Comprovante.Situacao.CONFERIR
+        comprovante.save(update_fields=["situacao", "updated_at"])
+        return Response(self.get_serializer(comprovante).data)
+
     @action(detail=True, methods=["get"])
     def arquivo(self, request, public_id=None):
         # Busca de novo SEM o defer: a lista nao carrega os bytes.
