@@ -12,7 +12,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
-from app.feriados import eh_domingo, motivo_de_turno_unico
+from app.feriados import eh_domingo, motivo_de_turno_unico, turnos_do_dia
 from app.models import (
     Consumo,
     Desperdicio,
@@ -473,7 +473,33 @@ class FechamentoCaixaUpdateSerializer(FechamentoCaixaSerializer):
     consumos = ConsumoDoTurnoSerializer(many=True, required=False)
 
     class Meta(FechamentoCaixaSerializer.Meta):
-        pass
+        # A data fica de fora: mudar o dia nao e corrigir o lancamento, e
+        # move-lo para outro lugar do painel. O turno entra, com a regra do dia
+        # em validate_periodo.
+        extra_kwargs = {"data": {"read_only": True}}
+
+    def validate_periodo(self, value):
+        """O turno errado se corrige, mas so para um turno que existe no dia.
+
+        Quem fecha a tarde as vezes escolhe "Manha" no formulario, e o unico
+        conserto era cancelar e relancar, jogando fora o caixa certo junto. A
+        regra e a mesma que o formulario segue (turnos_do_dia): dia comum tem
+        manha e tarde, domingo o domingo, feriado o dia inteiro.
+
+        Repetir o turno atual passa sem pergunta: a manha lancada antes da
+        padroeira entrar no cadastro ficou num turno que hoje nao existe mais
+        naquele dia, e corrigir o PIX dela nao pode travar por isso.
+
+        O turno de destino ja ocupado nao trava. Quando os dois da loja trocam
+        os turnos entre si, travar deixaria os dois presos; a tela avisa antes
+        de salvar.
+        """
+        if value == self.instance.periodo:
+            return value
+        validos, _ = turnos_do_dia(self.instance.data, self.instance.loja.conta)
+        if value not in validos:
+            raise serializers.ValidationError("Este turno nao existe nesse dia.")
+        return value
 
     def to_representation(self, instance):
         """A resposta do PATCH continua identica a da listagem.

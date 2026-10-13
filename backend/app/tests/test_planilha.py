@@ -126,6 +126,27 @@ class PlanilhaDoPeriodoTests(APITestCase):
             [linha[10] for linha in linhas], [210.0, 210.0, 10.0, 10.0, 220.0]
         )
 
+    def test_o_turno_do_feriado_sai_como_feriado(self):
+        """O turno do dia inteiro, numa empresa de manha e tarde, so acontece
+        no feriado. Escrito "Dia", ninguem sabia de que turno se tratava."""
+        self.fechamento.periodo = "DIA"
+        self.fechamento.save()
+
+        planilha = self.baixar(de=DIA_COMUM, ate=DIA_COMUM)
+
+        self.assertEqual(self.linhas(planilha["Entradas"])[0][2], "Feriado")
+
+    def test_na_empresa_de_um_fechamento_por_dia_o_turno_e_o_dia(self):
+        """Ali o dia inteiro e o fechamento de todo dia, e nao feriado."""
+        self.conta.fechamentos_por_dia = 1
+        self.conta.save()
+        self.fechamento.periodo = "DIA"
+        self.fechamento.save()
+
+        planilha = self.baixar(de=DIA_COMUM, ate=DIA_COMUM)
+
+        self.assertEqual(self.linhas(planilha["Entradas"])[0][2], "Dia")
+
     def test_o_consumo_nao_entra_nas_saidas(self):
         """A regra que a separacao existe para proteger: ninguem pagou na hora,
         entao o consumo nao saiu da gaveta. Somar a aba Saidas tem que dar o
