@@ -232,11 +232,104 @@ class PlanilhaDoPeriodoTests(APITestCase):
     def test_o_detalhe_do_consumo_diz_dia_loja_e_turno(self):
         planilha = self.baixar(de=DIA_COMUM, ate=DIA_COMUM)
 
-        linhas = self.linhas(planilha["Consumo"])
+        # So as linhas de lancamento: as de fecho nao tem data.
+        linhas = [l for l in self.linhas(planilha["Consumo"]) if l[0]]
         self.assertEqual(len(linhas), 2)
         self.assertEqual([linha[3] for linha in linhas], ["Bruno", "Camila"])
         self.assertEqual(linhas[0][1], "Loja Centro")
         self.assertEqual(linhas[0][2], "Tarde")
+
+    def test_o_detalhe_do_consumo_vem_por_pessoa_com_subtotal(self):
+        """O financeiro recebe o consumo para descontar de cada um. Agrupado
+        por pessoa, o que ela consumiu no periodo fica junto, e o subtotal e o
+        mesmo numero da aba Consumo por pessoa — em ordem de data, a Camila
+        estaria espalhada pelo mes inteiro."""
+        outra_loja = criar_loja(
+            nome_loja="Loja Sul", cidade="Patos", endereco="Rua 9", conta=self.conta
+        )
+        # Um dia antes, para provar que dentro da pessoa a ordem e a da data.
+        outro = FechamentoCaixa.objects.create(
+            loja=outra_loja, nome_funcionario="Ana", data="2026-08-04",
+            periodo="MANHA", pix=10, cartao=0, dinheiro=0, link_pagamento=0,
+        )
+        Consumo.objects.create(fechamento=outro, encarregado=self.camila, valor="5.00")
+
+        planilha = self.baixar(de="2026-08-01", ate="2026-08-31")
+
+        linhas = self.linhas(planilha["Consumo"])
+        # Coluna 4 e "Pessoa" nas linhas de dado e o rotulo nas de fecho.
+        self.assertEqual(
+            [linha[3] for linha in linhas],
+            ["Bruno", "Total Bruno", "Camila", "Camila", "Total Camila", "TOTAL"],
+        )
+        self.assertEqual(
+            [linha[4] for linha in linhas], [8.0, 8.0, 5.0, 12.0, 17.0, 25.0]
+        )
+        self.assertEqual(linhas[2][1], "Loja Sul")  # o dia 4 vem antes do dia 5
+
+    def test_o_detalhe_do_consumo_fecha_com_o_desconto(self):
+        """As duas abas de consumo vao juntas para o financeiro: se o TOTAL de
+        uma nao bater com a soma da outra, ninguem sabe qual desconto vale."""
+        planilha = self.baixar(de=DIA_COMUM, ate=DIA_COMUM)
+
+        por_pessoa = sum(l[1] for l in self.linhas(planilha["Consumo por pessoa"]))
+        detalhe = self.linhas(planilha["Consumo"])
+        self.assertEqual(detalhe[-1][3], "TOTAL")
+        self.assertEqual(detalhe[-1][4], por_pessoa)
+
+    def test_xara_nao_vira_uma_pessoa_so_no_detalhe(self):
+        """Dois Bruno sao dois descontos — a aba Consumo por pessoa ja os
+        separa pelo cadastro, e o detalhe tem que fechar com ela."""
+        outro_bruno = Encarregado.objects.create(nome="Bruno", conta=self.conta)
+        Consumo.objects.create(
+            fechamento=self.fechamento, encarregado=outro_bruno, valor="3.00"
+        )
+
+        planilha = self.baixar(de=DIA_COMUM, ate=DIA_COMUM)
+
+        rotulos = [linha[3] for linha in self.linhas(planilha["Consumo"])]
+        self.assertEqual(rotulos.count("Total Bruno"), 2)
+
+    def test_acento_nao_tira_a_pessoa_da_ordem_alfabetica(self):
+        """Angela com acento e da letra A. Pela ordem crua dos caracteres o
+        "Â" vem depois do "z", e ela iria parar no fim da lista."""
+        angela = Encarregado.objects.create(nome="Ângela", conta=self.conta)
+        Consumo.objects.create(
+            fechamento=self.fechamento, encarregado=angela, valor="4.00"
+        )
+
+        planilha = self.baixar(de=DIA_COMUM, ate=DIA_COMUM)
+
+        por_pessoa = [l[0] for l in self.linhas(planilha["Consumo por pessoa"])]
+        self.assertEqual(por_pessoa, ["Ângela", "Bruno", "Camila"])
+        detalhe = [l[3] for l in self.linhas(planilha["Consumo"]) if l[0]]
+        self.assertEqual(detalhe, ["Ângela", "Bruno", "Camila"])
+
+    def test_so_as_abas_escolhidas_vem_no_arquivo(self):
+        """No dia 25 vai para o financeiro so o consumo. O caixa da loja nao
+        e assunto de quem desconta da folha."""
+        planilha = self.baixar(
+            de=DIA_COMUM, ate=DIA_COMUM, abas="consumo_por_pessoa,consumo"
+        )
+
+        self.assertEqual(planilha.sheetnames, ["Consumo por pessoa", "Consumo"])
+
+    def test_as_abas_escolhidas_seguem_a_ordem_do_arquivo(self):
+        """A ordem e a de sempre, e nao a de quem marcou primeiro: quem abre o
+        arquivo procura a aba no lugar de costume."""
+        planilha = self.baixar(de=DIA_COMUM, ate=DIA_COMUM, abas="consumo,entradas")
+
+        self.assertEqual(planilha.sheetnames, ["Entradas", "Consumo"])
+
+    def test_aba_que_nao_existe_e_recusada(self):
+        """Um arquivo sem nenhuma aba nao abre no Excel — melhor dizer o porque
+        do que entregar um arquivo quebrado."""
+        client = APIClient()
+        client.force_authenticate(self.gerente)
+
+        resp = client.get(f"{URL}?de={DIA_COMUM}&ate={DIA_COMUM}&abas=estoque")
+
+        self.assertEqual(resp.status_code, 400)
 
     def test_valor_sai_como_numero_e_data_como_data(self):
         """Texto formatado nao soma nem ordena — que e tudo o que ela vai fazer
