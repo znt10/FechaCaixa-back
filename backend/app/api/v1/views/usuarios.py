@@ -93,6 +93,9 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             "first_name": request.user.first_name,
             "email": request.user.email,
             "group": get_user_group_name(request.user),
+            # A tela Plataforma e so do dono da plataforma: o cargo "Admin"
+            # tambem existe dentro das empresas, e nao basta para decidir.
+            "super": request.user.is_superuser,
             "modulos": {
                 "notas_fiscais": tem_notas,
                 "catalogo": tem_catalogo,
