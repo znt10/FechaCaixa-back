@@ -278,3 +278,14 @@ class UsaOPlanoDeContas(BasePermission):
         if conta.modulo_notas_ativo:
             return True
         return conta.modulo_banco_ativo and is_gerente_ou_admin(user)
+
+
+class IsSuperuser(BasePermission):
+    """So o dono da plataforma. O grupo "Admin" existe dentro das empresas e
+    nao basta: a tela Plataforma mostra e muda todas elas."""
+
+    message = "Só o dono da plataforma acessa esta tela."
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated and user.is_superuser)

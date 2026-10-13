@@ -24,6 +24,13 @@ from .views.acesso import (
 )
 from .views.mensalidade import JaPagueiView, MinhaMensalidadeView
 from .views.planilha import PlanilhaDoPeriodoView
+from .views.plataforma import (
+    ConfirmarPagamentoView,
+    EmpresaDaPlataformaView,
+    EmpresasDaPlataformaView,
+    RecusarPagamentoView,
+    RegistrarPagamentoView,
+)
 from .views.empresa import (
     AparelhosView,
     DesconectarAparelhoView,
@@ -111,5 +118,26 @@ urlpatterns = router.urls + [
         "minha-mensalidade/ja-paguei/",
         JaPagueiView.as_view(),
         name="minha-mensalidade-ja-paguei",
+    ),
+    path("plataforma/empresas/", EmpresasDaPlataformaView.as_view(), name="plataforma-empresas"),
+    path(
+        "plataforma/empresas/<uuid:public_id>/",
+        EmpresaDaPlataformaView.as_view(),
+        name="plataforma-empresa",
+    ),
+    path(
+        "plataforma/empresas/<uuid:public_id>/registrar-pagamento/",
+        RegistrarPagamentoView.as_view(),
+        name="plataforma-registrar-pagamento",
+    ),
+    path(
+        "plataforma/pagamentos/<uuid:public_id>/confirmar/",
+        ConfirmarPagamentoView.as_view(),
+        name="plataforma-confirmar-pagamento",
+    ),
+    path(
+        "plataforma/pagamentos/<uuid:public_id>/recusar/",
+        RecusarPagamentoView.as_view(),
+        name="plataforma-recusar-pagamento",
     ),
 ]
