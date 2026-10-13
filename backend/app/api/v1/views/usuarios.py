@@ -87,6 +87,9 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         tem_banco = request.user.is_superuser or bool(
             conta and conta.modulo_banco_ativo
         )
+        tem_comprovantes = request.user.is_superuser or bool(
+            conta and conta.modulo_comprovantes_ativo
+        )
 
         return Response({
             "id": request.user.id,
@@ -97,6 +100,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
                 "notas_fiscais": tem_notas,
                 "catalogo": tem_catalogo,
                 "banco": tem_banco,
+                "comprovantes": tem_comprovantes,
             },
         })
 
