@@ -94,6 +94,16 @@ class OQueOFuncionarioPodeTests(BaseDoFuncionario):
         self.fechamento.refresh_from_db()
         self.assertEqual(str(self.fechamento.dinheiro), "150.00")
 
+    def test_ve_os_turnos_do_dia_para_corrigir_o_turno(self):
+        """Quem corrige o valor corrige o turno, e o seletor da correcao
+        pergunta ao servidor quais turnos existem no dia — o feriado so ele
+        sabe. Ver os turnos nao e lancar: o lancamento continua so da
+        gerencia."""
+        resp = self.client.get("/api/v1/fechamentos-caixa/turnos/?data=2026-08-20")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["periodos"], ["MANHA", "TARDE"])
+
     def test_ve_as_lojas_para_montar_o_painel(self):
         resp = self.client.get("/api/v1/lojas/")
 

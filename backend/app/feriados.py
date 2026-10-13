@@ -90,3 +90,28 @@ def motivo_de_turno_unico(dia, conta=None):
             return f"Feriado: {local.descricao}"
 
     return None
+
+
+def turnos_do_dia(dia, conta=None):
+    """Os turnos que existem num dia, para uma empresa — e o motivo, quando e
+    um so.
+
+    Empresa que fecha o caixa uma vez por dia so tem o dia inteiro, e a regra
+    de domingo/feriado nao se aplica a ela: essa regra tira manha e tarde, e
+    ali nao existe tarde para tirar. Nas outras, domingo tem turno proprio e
+    feriado cai no do dia inteiro.
+
+    Mora aqui, e nao na view, porque duas coisas perguntam: o formulario
+    (quais turnos oferecer) e a correcao do turno pela gerencia (para qual
+    turno o lancamento pode ir).
+    """
+    from app.models import FechamentoCaixa
+
+    Periodo = FechamentoCaixa.Periodo
+    if conta is not None and conta.fechamentos_por_dia == 1:
+        return [Periodo.DIA], None
+
+    motivo = motivo_de_turno_unico(dia, conta)
+    if motivo:
+        return [Periodo.DOMINGO if eh_domingo(dia) else Periodo.DIA], motivo
+    return [Periodo.MANHA, Periodo.TARDE], None

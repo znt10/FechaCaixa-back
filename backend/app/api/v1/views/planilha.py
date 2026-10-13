@@ -13,6 +13,10 @@ caixa da loja com o lanche de quem trabalha nela, ou com o item que nem foi
 vendido. E o mesmo erro que o consumo e o desperdicio separados do caixa
 existem para evitar.
 
+Quem baixa escolhe quais abas vem (`?abas=`), e sem escolha vem todas: no dia
+25 o consumo vai sozinho para o financeiro, que desconta da folha e nao tem nada
+a ver com o caixa da loja.
+
 As abas se chamam pelo tipo do lancamento — Entradas, Saidas, Consumo,
 Desperdicio — e nao pela tela de onde vieram: e assim que a empresa fala do
 dinheiro.
@@ -24,6 +28,7 @@ dinheiro saiu da gaveta — somar a aba Saidas continua batendo com as colunas
 de retirada, despesa e devolucao da aba Entradas.
 """
 
+import unicodedata
 from datetime import date
 
 from django.http import HttpResponse
@@ -31,6 +36,7 @@ from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
@@ -51,6 +57,36 @@ FECHO = Font(bold=True)
 FUNDO_DO_CABECALHO = PatternFill("solid", fgColor="1F6F4A")
 
 TURNOS = dict(FechamentoCaixa.Periodo.choices)
+
+# As abas na ordem do arquivo. O nome e o que a tela manda em ?abas= e tambem o
+# do metodo que escreve a aba (`_entradas`, `_saidas`...).
+ABAS = ("entradas", "saidas", "consumo_por_pessoa", "consumo", "desperdicio")
+
+
+def _alfabetica(nome):
+    """A chave de ordem de um nome de pessoa: sem acento e sem maiuscula.
+
+    Pela ordem crua dos caracteres o "Â" vem depois do "z", e a Ângela iria
+    parar no fim da lista — que e uma lista de procura por nome.
+    """
+    decomposto = unicodedata.normalize("NFKD", nome)
+    return "".join(c for c in decomposto if not unicodedata.combining(c)).casefold()
+
+
+def _turno(fechamento):
+    """O turno por extenso.
+
+    O turno do dia inteiro tem dois sentidos. Na empresa de manha e tarde ele
+    so acontece no feriado, e escrito "Dia" ninguem sabia de que turno se
+    tratava — sai "Feriado", como o domingo sai "Domingo". Na empresa que
+    fecha uma vez por dia ele e o fechamento de todo dia, e continua "Dia".
+    """
+    if (
+        fechamento.periodo == FechamentoCaixa.Periodo.DIA
+        and fechamento.loja.conta.fechamentos_por_dia != 1
+    ):
+        return "Feriado"
+    return TURNOS.get(fechamento.periodo, fechamento.periodo)
 
 
 def _aba(planilha, titulo, colunas):
@@ -82,12 +118,17 @@ def _numero(valor):
     return float(valor or 0)
 
 
-def _em_blocos(folha, linhas, rotulo_em, somar):
-    """Escreve as linhas agrupadas por loja, cada bloco fechado por um subtotal.
+def _em_blocos(folha, linhas, rotulo_em, somar, nome_do_bloco=str, ordem=None):
+    """Escreve as linhas agrupadas, cada bloco fechado por um subtotal.
 
-    `linhas` e uma lista de (nome_da_loja, valores). Ela confere loja por loja;
-    sem o subtotal, o total de cada uma sai de arrastar o mouse pela coluna, e
-    e ai que se soma o bloco do vizinho junto.
+    `linhas` e uma lista de (bloco, valores) — o bloco e a loja nas abas do
+    caixa e a pessoa na do consumo. Ela confere bloco por bloco; sem o
+    subtotal, o total de cada um sai de arrastar o mouse pela coluna, e e ai
+    que se soma o bloco do vizinho junto.
+
+    O bloco e qualquer chave: a pessoa entra pelo cadastro, e nao pelo nome,
+    para dois Bruno continuarem sendo dois descontos. `nome_do_bloco` diz o
+    que escrever no subtotal e `ordem` em que ordem os blocos saem.
 
     Sem nenhuma linha nao escreve nada: um periodo vazio nao pode aparecer com
     uma linha de TOTAL zero, que se le como "a loja nao vendeu" em vez de "nao
@@ -108,17 +149,17 @@ def _em_blocos(folha, linhas, rotulo_em, somar):
         for celula in folha[folha.max_row]:
             celula.font = FECHO
 
-    for loja in sorted({loja for loja, _ in linhas}):
-        bloco = [valores for nome, valores in linhas if nome == loja]
+    for chave in sorted({chave for chave, _ in linhas}, key=ordem):
+        bloco = [valores for de_quem, valores in linhas if de_quem == chave]
         for valores in bloco:
             folha.append(valores)
-        fechar(f"Total {loja}", bloco)
+        fechar(f"Total {nome_do_bloco(chave)}", bloco)
 
     fechar("TOTAL", [valores for _, valores in linhas])
 
 
 class PlanilhaDoPeriodoView(APIView):
-    """GET /api/v1/planilha/?de=&ate= — o periodo inteiro em .xlsx.
+    """GET /api/v1/planilha/?de=&ate=&abas= — o periodo inteiro em .xlsx.
 
     Mesma permissao da leitura do painel: quem pode conferir o caixa pode
     levar o periodo para a planilha. O escopo sai de `escopo_de_lojas`, o
@@ -130,13 +171,16 @@ class PlanilhaDoPeriodoView(APIView):
 
     def get(self, request):
         hoje = timezone.localdate()
+        abas = self._abas(request.query_params.get("abas"))
         de = self._data(request.query_params.get("de")) or hoje
         ate = self._data(request.query_params.get("ate")) or hoje
 
         lojas = escopo_de_lojas(request)
         fechamentos = list(
             FechamentoCaixa.objects.filter(loja__in=lojas, data__gte=de, data__lte=ate)
-            .select_related("loja")
+            # A conta vem junto porque o nome do turno do dia inteiro depende
+            # dela (ver _turno): sem isto, uma consulta por linha.
+            .select_related("loja__conta")
             .prefetch_related(
                 "retiradas__responsavel", "consumos__encarregado", "despesas",
                 "desperdicios__salgado__categoria",
@@ -145,15 +189,12 @@ class PlanilhaDoPeriodoView(APIView):
         )
 
         planilha = Workbook()
-        # O Workbook ja nasce com uma aba, e ela nao entra em nenhuma das
-        # quatro: sem remover, o arquivo abre numa folha vazia.
+        # O Workbook ja nasce com uma aba, e ela nao e nenhuma das nossas:
+        # sem remover, o arquivo abre numa folha vazia.
         planilha.remove(planilha.active)
 
-        self._entradas(planilha, fechamentos)
-        self._saidas(planilha, fechamentos)
-        self._consumo_por_pessoa(planilha, fechamentos)
-        self._consumo(planilha, fechamentos)
-        self._desperdicio(planilha, fechamentos)
+        for aba in abas:
+            getattr(self, f"_{aba}")(planilha, fechamentos)
 
         resposta = HttpResponse(
             content_type=(
@@ -168,6 +209,22 @@ class PlanilhaDoPeriodoView(APIView):
         resposta["Cache-Control"] = "no-store"
         planilha.save(resposta)
         return resposta
+
+    @staticmethod
+    def _abas(texto):
+        """As abas pedidas, na ordem do arquivo — e nao na de quem marcou.
+
+        Sem o parametro vem todas, que e o arquivo de sempre. Nome que nao e
+        de aba nenhuma e ignorado; se nao sobrar nenhuma, e 400, porque um
+        .xlsx sem aba nao abre no Excel.
+        """
+        if not texto:
+            return ABAS
+        pedidas = {nome.strip() for nome in texto.split(",")}
+        abas = [aba for aba in ABAS if aba in pedidas]
+        if not abas:
+            raise ValidationError({"abas": "Escolha ao menos uma aba da planilha."})
+        return abas
 
     @staticmethod
     def _data(texto):
@@ -215,7 +272,7 @@ class PlanilhaDoPeriodoView(APIView):
             (f.loja.nome_loja, [
                 f.data,
                 f.loja.nome_loja,
-                TURNOS.get(f.periodo, f.periodo),
+                _turno(f),
                 f.nome_funcionario,
                 _numero(f.pix), _numero(f.cartao), _numero(f.dinheiro),
                 _numero(f.link_pagamento),
@@ -256,7 +313,7 @@ class PlanilhaDoPeriodoView(APIView):
         )
         linhas = []
         for f in fechamentos:
-            comum = [f.data, f.loja.nome_loja, TURNOS.get(f.periodo, f.periodo)]
+            comum = [f.data, f.loja.nome_loja, _turno(f)]
             for despesa in sorted(f.despesas.all(), key=lambda d: d.descricao):
                 if _numero(despesa.valor) <= 0:
                     continue
@@ -325,7 +382,10 @@ class PlanilhaDoPeriodoView(APIView):
         # Ela abre aqui para achar UMA pessoa e ver quanto descontar da folha —
         # por nome se acha na hora, por valor se percorre a lista inteira. Quem
         # consumiu mais e a pergunta da tela, e la ela continua respondida.
-        for linha in sorted(por_pessoa.values(), key=lambda l: l["nome"].lower()):
+        # O id desempata os xaras na mesma ordem da aba Consumo.
+        for _, linha in sorted(
+            por_pessoa.items(), key=lambda par: (_alfabetica(par[1]["nome"]), par[0])
+        ):
             folha.append([
                 linha["nome"], linha["total"], linha["vezes"],
                 ", ".join(sorted(linha["lojas"])),
@@ -334,7 +394,14 @@ class PlanilhaDoPeriodoView(APIView):
 
     def _consumo(self, planilha, fechamentos):
         """O detalhe por tras do total: e o que ela mostra quando alguem
-        contesta o desconto."""
+        contesta o desconto.
+
+        Agrupado por pessoa, de A a Z, com os lancamentos de cada uma em ordem
+        de data e um subtotal no fim. Em ordem de data, o consumo de uma pessoa
+        ficava espalhado pelo mes inteiro; assim o subtotal de cada uma e o
+        mesmo numero da aba Consumo por pessoa, e as duas vao juntas para o
+        financeiro.
+        """
         folha = _aba(
             planilha,
             "Consumo",
@@ -343,15 +410,23 @@ class PlanilhaDoPeriodoView(APIView):
                 ("Valor", 13), ("Quem lançou", 24),
             ],
         )
-        for f in fechamentos:
-            for consumo in sorted(
-                f.consumos.all(), key=lambda c: c.encarregado.nome
-            ):
-                folha.append([
-                    f.data, f.loja.nome_loja, TURNOS.get(f.periodo, f.periodo),
-                    consumo.encarregado.nome, _numero(consumo.valor),
-                    f.nome_funcionario,
-                ])
+        # Os fechamentos ja vem por data, loja e turno: e essa a ordem que
+        # sobra dentro de cada pessoa.
+        linhas = [
+            ((consumo.encarregado.nome, consumo.encarregado_id), [
+                f.data, f.loja.nome_loja, _turno(f),
+                consumo.encarregado.nome, _numero(consumo.valor),
+                f.nome_funcionario,
+            ])
+            for f in fechamentos
+            for consumo in f.consumos.all()
+        ]
+        # Rotulo em "Pessoa", a ultima coluna de texto antes do valor.
+        _em_blocos(
+            folha, linhas, rotulo_em=4, somar=[5],
+            nome_do_bloco=lambda pessoa: pessoa[0],
+            ordem=lambda pessoa: (_alfabetica(pessoa[0]), pessoa[1]),
+        )
         _formatar(folha, {1: DIA, 5: DINHEIRO})
 
     def _desperdicio(self, planilha, fechamentos):
@@ -384,7 +459,7 @@ class PlanilhaDoPeriodoView(APIView):
                 linhas.append((f.loja.nome_loja, [
                     f.data,
                     f.loja.nome_loja,
-                    TURNOS.get(f.periodo, f.periodo),
+                    _turno(f),
                     perda.salgado.categoria.nome,
                     perda.salgado.nome,
                     perda.quantidade,
