@@ -73,6 +73,22 @@ def _alfabetica(nome):
     return "".join(c for c in decomposto if not unicodedata.combining(c)).casefold()
 
 
+def _turno(fechamento):
+    """O turno por extenso.
+
+    O turno do dia inteiro tem dois sentidos. Na empresa de manha e tarde ele
+    so acontece no feriado, e escrito "Dia" ninguem sabia de que turno se
+    tratava — sai "Feriado", como o domingo sai "Domingo". Na empresa que
+    fecha uma vez por dia ele e o fechamento de todo dia, e continua "Dia".
+    """
+    if (
+        fechamento.periodo == FechamentoCaixa.Periodo.DIA
+        and fechamento.loja.conta.fechamentos_por_dia != 1
+    ):
+        return "Feriado"
+    return TURNOS.get(fechamento.periodo, fechamento.periodo)
+
+
 def _aba(planilha, titulo, colunas):
     """Cria a aba com o cabecalho congelado e as larguras ja dadas.
 
@@ -162,7 +178,9 @@ class PlanilhaDoPeriodoView(APIView):
         lojas = escopo_de_lojas(request)
         fechamentos = list(
             FechamentoCaixa.objects.filter(loja__in=lojas, data__gte=de, data__lte=ate)
-            .select_related("loja")
+            # A conta vem junto porque o nome do turno do dia inteiro depende
+            # dela (ver _turno): sem isto, uma consulta por linha.
+            .select_related("loja__conta")
             .prefetch_related(
                 "retiradas__responsavel", "consumos__encarregado", "despesas",
                 "desperdicios__salgado__categoria",
@@ -254,7 +272,7 @@ class PlanilhaDoPeriodoView(APIView):
             (f.loja.nome_loja, [
                 f.data,
                 f.loja.nome_loja,
-                TURNOS.get(f.periodo, f.periodo),
+                _turno(f),
                 f.nome_funcionario,
                 _numero(f.pix), _numero(f.cartao), _numero(f.dinheiro),
                 _numero(f.link_pagamento),
@@ -295,7 +313,7 @@ class PlanilhaDoPeriodoView(APIView):
         )
         linhas = []
         for f in fechamentos:
-            comum = [f.data, f.loja.nome_loja, TURNOS.get(f.periodo, f.periodo)]
+            comum = [f.data, f.loja.nome_loja, _turno(f)]
             for despesa in sorted(f.despesas.all(), key=lambda d: d.descricao):
                 if _numero(despesa.valor) <= 0:
                     continue
@@ -396,7 +414,7 @@ class PlanilhaDoPeriodoView(APIView):
         # sobra dentro de cada pessoa.
         linhas = [
             ((consumo.encarregado.nome, consumo.encarregado_id), [
-                f.data, f.loja.nome_loja, TURNOS.get(f.periodo, f.periodo),
+                f.data, f.loja.nome_loja, _turno(f),
                 consumo.encarregado.nome, _numero(consumo.valor),
                 f.nome_funcionario,
             ])
@@ -441,7 +459,7 @@ class PlanilhaDoPeriodoView(APIView):
                 linhas.append((f.loja.nome_loja, [
                     f.data,
                     f.loja.nome_loja,
-                    TURNOS.get(f.periodo, f.periodo),
+                    _turno(f),
                     perda.salgado.categoria.nome,
                     perda.salgado.nome,
                     perda.quantidade,

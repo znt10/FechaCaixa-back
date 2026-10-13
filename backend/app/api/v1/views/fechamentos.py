@@ -11,7 +11,7 @@ from datetime import date
 
 from django.utils import timezone
 
-from app.feriados import eh_domingo, motivo_de_turno_unico
+from app.feriados import turnos_do_dia
 
 from app.models import (
     Encarregado,
@@ -201,8 +201,12 @@ class FechamentoCaixaViewSet(viewsets.ModelViewSet):
             # repoe pelo painel um dia que a loja esqueceu, escolhendo a data
             # — e para escolher a data ela precisa perguntar antes quais
             # turnos existem naquele dia.
-            # Funcionario logado nao entra: ele confere o caixa, nao lanca.
+            # Funcionario logado nao lanca: ele confere o caixa. Mas corrige,
+            # inclusive o turno, e o seletor da correcao pergunta os turnos do
+            # dia — so ler a lista nao e lancar nada.
             if self.request.user.is_authenticated:
+                if self.action == 'turnos':
+                    return [IsAuthenticated(), PodeConferirOCaixa()]
                 return [IsAuthenticated(), IsGerenteOrAdministrador()]
             return [TemAcessoAoFormulario()]
         if self.action == 'correcao':
@@ -380,34 +384,11 @@ class FechamentoCaixaViewSet(viewsets.ModelViewSet):
         primeira_loja = escopo_de_lojas(request).select_related('conta').first()
         conta = conta_do_aparelho or (primeira_loja.conta if primeira_loja else None)
 
-        # Empresa que fecha o caixa uma vez por dia so tem um periodo, e a
-        # regra de domingo/feriado nao se aplica a ela: essa regra fala de
-        # manha e tarde, e aqui nao existe tarde para tirar.
-        if conta and conta.fechamentos_por_dia == 1:
-            return Response(
-                {
-                    "data": dia,
-                    "periodos": [FechamentoCaixa.Periodo.DIA],
-                    "motivo": None,
-                }
-            )
-
-        motivo = motivo_de_turno_unico(dia, conta.id if conta else None)
-
         # Domingo e feriado nao viram "manha": a loja abre mais tarde e fecha
         # mais tarde, entao o unico lancamento do dia cobre o expediente todo.
-        # Domingo tem turno proprio; feriado usa o do dia inteiro.
-        if motivo:
-            periodos = [
-                FechamentoCaixa.Periodo.DOMINGO
-                if eh_domingo(dia)
-                else FechamentoCaixa.Periodo.DIA
-            ]
-        else:
-            periodos = [
-                FechamentoCaixa.Periodo.MANHA,
-                FechamentoCaixa.Periodo.TARDE,
-            ]
+        # A regra inteira, com a empresa de um fechamento por dia, esta em
+        # turnos_do_dia — a correcao do turno pela gerencia pergunta a mesma.
+        periodos, motivo = turnos_do_dia(dia, conta)
         return Response({"data": dia, "periodos": periodos, "motivo": motivo})
 
     @action(detail=False, methods=['get'], url_path='pendentes')
