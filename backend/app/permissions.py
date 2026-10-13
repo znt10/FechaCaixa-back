@@ -246,6 +246,23 @@ class ModuloDeBancoAtivo(BasePermission):
         return bool(conta and conta.modulo_banco_ativo)
 
 
+class ModuloDeComprovantesAtivo(BasePermission):
+    """Barra quem nao tem os comprovantes ligados na conta. Mesmo desenho do
+    ModuloDeNotasAtivo; o cargo fica com IsGerenteOrAdministrador nas views."""
+
+    message = "O módulo de comprovantes não está ativo para esta empresa."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return True
+
+        conta = get_conta_do_usuario(user)
+        return bool(conta and conta.modulo_comprovantes_ativo)
+
+
 class UsaOPlanoDeContas(BasePermission):
     """O plano de contas serve aos dois modulos: a nota e classificada nele, e
     o pagamento do extrato tambem — o aluguel pago no banco e o aluguel da
@@ -255,7 +272,7 @@ class UsaOPlanoDeContas(BasePermission):
     gerencia, que e quem alcanca o extrato.
     """
 
-    message = "O plano de contas é dos módulos de notas fiscais e de extrato bancário."
+    message = "O plano de contas é dos módulos de notas fiscais, extrato bancário e comprovantes."
 
     def has_permission(self, request, view):
         user = request.user
@@ -269,4 +286,6 @@ class UsaOPlanoDeContas(BasePermission):
             return False
         if conta.modulo_notas_ativo:
             return True
-        return conta.modulo_banco_ativo and is_gerente_ou_admin(user)
+        return (
+            conta.modulo_banco_ativo or conta.modulo_comprovantes_ativo
+        ) and is_gerente_ou_admin(user)
