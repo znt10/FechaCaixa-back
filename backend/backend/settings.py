@@ -272,3 +272,11 @@ DEFAULT_FROM_EMAIL = os.getenv(
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 # URL do front, usada para montar links em emails (confirmacao de conta).
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+
+# ─── Comprovantes ─────────────────────────────────────────────────────────────
+# A caixa do Gmail que recebe os comprovantes, lida por IMAP com senha de app.
+# Vazias = a leitura da caixa nao roda (o resto do sistema segue normal).
+# ANTHROPIC_API_KEY nao passa por aqui: o SDK le direto do ambiente.
+COMPROVANTES_EMAIL = os.getenv("COMPROVANTES_EMAIL", "")
+COMPROVANTES_SENHA_APP = os.getenv("COMPROVANTES_SENHA_APP", "").replace(" ", "")
+COMPROVANTES_MODELO = os.getenv("COMPROVANTES_MODELO", "claude-haiku-5-5")
