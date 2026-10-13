@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import (
+    Assinatura,
     CategoriaDeMovimento,
     CategoriaDeSalgado,
     Conta,
@@ -18,6 +19,7 @@ from .models import (
     Desperdicio,
     Loja,
     NotaFiscal,
+    Pagamento,
     PerfilUsuario,
     ResponsavelRetirada,
     Salgado,
@@ -365,3 +367,22 @@ class RegraDeClassificacaoAdmin(admin.ModelAdmin):
     list_display = ("assinatura", "entrada", "tipo", "elemento", "categoria", "conta")
     list_filter = ("conta", "tipo")
     search_fields = ("assinatura",)
+
+
+# A mensalidade se administra na tela Plataforma do proprio FechaCaixa; aqui
+# fica a reserva, com o que veio do cliente preso.
+@admin.register(Assinatura)
+class AssinaturaAdmin(admin.ModelAdmin):
+    list_display = ("conta", "valor_mensal", "paga_ate", "isenta", "nunca_bloquear")
+    list_filter = ("isenta", "nunca_bloquear")
+    search_fields = ("conta__nome",)
+
+
+@admin.register(Pagamento)
+class PagamentoAdmin(admin.ModelAdmin):
+    list_display = ("assinatura", "status", "origem", "valor", "informado_em", "paga_ate_depois")
+    list_filter = ("status", "origem")
+    readonly_fields = (
+        "assinatura", "origem", "valor", "informado_por", "informado_em",
+        "resolvido_por", "resolvido_em", "paga_ate_depois",
+    )

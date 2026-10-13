@@ -1,6 +1,7 @@
 import os
 import sys
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -272,3 +273,15 @@ DEFAULT_FROM_EMAIL = os.getenv(
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 # URL do front, usada para montar links em emails (confirmacao de conta).
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+
+# ─── Mensalidade ──────────────────────────────────────────────────────────────
+# O valor que a empresa nova paga por mes, ajustavel depois por empresa na
+# tela Plataforma. A chave Pix, o nome e a cidade de quem recebe vao dentro do
+# QR Code: dado pessoal do dono, por isso so no ambiente e nunca no codigo.
+# Sem PIX_CHAVE a tela diz que o Pix nao foi configurado; a regra de bloqueio
+# nao depende dele.
+MENSALIDADE_VALOR_PADRAO = Decimal(os.getenv("MENSALIDADE_VALOR_PADRAO", "100.00"))
+MENSALIDADE_EMAIL_AVISO = os.getenv("MENSALIDADE_EMAIL_AVISO", "")
+PIX_CHAVE = os.getenv("PIX_CHAVE", "")
+PIX_NOME_RECEBEDOR = os.getenv("PIX_NOME_RECEBEDOR", "")
+PIX_CIDADE = os.getenv("PIX_CIDADE", "")

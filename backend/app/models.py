@@ -4,8 +4,10 @@ import uuid
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
@@ -119,11 +121,19 @@ class Conta(BaseModel):
         raise RuntimeError("Nao foi possivel gerar um codigo de acesso unico")
 
     def save(self, *args, **kwargs):
+        # Lido antes do super().save(): depois dele a conta ja existe.
+        nova = self._state.adding
         if not self.slug:
             self.slug = self._slug_livre(slugify(self.nome)[:55])
         if not self.codigo_acesso:
             self.codigo_acesso = self.gerar_codigo_acesso()
-        return super().save(*args, **kwargs)
+        resultado = super().save(*args, **kwargs)
+        if nova:
+            # Toda empresa tem mensalidade desde o primeiro dia; a nova ganha
+            # o primeiro mes. As que ja existiam foram criadas isentas pela
+            # migration 0056.
+            Assinatura.primeiro_mes_de_graca(self)
+        return resultado
 
     def _slug_livre(self, base):
         base = base or "conta"
@@ -1287,3 +1297,93 @@ class RegraDeClassificacao(BaseModel):
 
     def __str__(self):
         return self.assinatura
+
+
+class Assinatura(BaseModel):
+    """A mensalidade de uma empresa: quanto, ate quando esta paga, e as
+    duas excecoes que o dono decide.
+
+    `isenta` e cortesia: nao cobra, nao mostra faixa, nao bloqueia.
+    `nunca_bloquear` e confianca: cobra e mostra a faixa como todo mundo, mas
+    o atraso nunca trava o painel.
+
+    Desativar a empresa nao mora aqui: e o `Conta.ativo`, que ja barrava o
+    formulario da loja antes da mensalidade existir.
+    """
+
+    conta = models.OneToOneField(
+        Conta, on_delete=models.CASCADE, related_name="assinatura"
+    )
+    valor_mensal = models.DecimalField(max_digits=8, decimal_places=2)
+    dia_de_vencimento = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(28)]
+    )
+    # O dia do vencimento em aberto. Ate ele (inclusive) a empresa esta em
+    # dia; a regra inteira sai desta data (ver services/mensalidade/situacao).
+    paga_ate = models.DateField()
+    isenta = models.BooleanField(default=False)
+    nunca_bloquear = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["conta__nome"]
+
+    @classmethod
+    def primeiro_mes_de_graca(cls, conta, hoje=None):
+        from app.services.mensalidade.datas import dia_de_vencimento_para, mes_seguinte
+
+        hoje = hoje or timezone.localdate()
+        dia = dia_de_vencimento_para(hoje)
+        return cls.objects.create(
+            conta=conta,
+            valor_mensal=settings.MENSALIDADE_VALOR_PADRAO,
+            dia_de_vencimento=dia,
+            paga_ate=mes_seguinte(hoje, dia),
+        )
+
+    def __str__(self):
+        return f"{self.conta.nome} - paga ate {self.paga_ate}"
+
+
+class Pagamento(BaseModel):
+    """Um mes pago, ou um aviso de que foi pago esperando o dono conferir.
+
+    No maximo um AGUARDANDO por assinatura. A garantia mora no servico
+    (select_for_update), e nao numa UniqueConstraint condicional: o MySQL de
+    producao nao as suporta, e o Django so avisaria sem criar nada.
+    """
+
+    class Status(models.TextChoices):
+        AGUARDANDO = "AGUARDANDO", "Aguardando confirmação"
+        CONFIRMADO = "CONFIRMADO", "Confirmado"
+        RECUSADO = "RECUSADO", "Recusado"
+
+    class Origem(models.TextChoices):
+        JA_PAGUEI = "JA_PAGUEI", "Já paguei"
+        MANUAL = "MANUAL", "Registrado pelo dono"
+
+    assinatura = models.ForeignKey(
+        Assinatura, on_delete=models.CASCADE, related_name="pagamentos"
+    )
+    status = models.CharField(max_length=12, choices=Status.choices)
+    origem = models.CharField(max_length=12, choices=Origem.choices)
+    valor = models.DecimalField(max_digits=8, decimal_places=2)
+    informado_por = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="pagamentos_informados",
+    )
+    informado_em = models.DateTimeField(default=timezone.now)
+    resolvido_por = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="pagamentos_resolvidos",
+    )
+    resolvido_em = models.DateTimeField(null=True, blank=True)
+    # O "paga ate" que a confirmacao gravou, para o historico dizer o que
+    # cada pagamento comprou.
+    paga_ate_depois = models.DateField(null=True, blank=True)
+    observacao = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-informado_em", "-id"]
+
+    def __str__(self):
+        return f"{self.assinatura.conta.nome} - {self.valor} - {self.get_status_display()}"
