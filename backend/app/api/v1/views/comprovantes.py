@@ -191,6 +191,8 @@ class ComprovanteViewSet(
             raise NotFound("Este comprovante nao tem arquivo guardado.")
         resposta = HttpResponse(bytes(comprovante.arquivo), content_type=comprovante.arquivo_tipo)
         resposta["Content-Disposition"] = f'inline; filename="{comprovante.arquivo_nome}"'
+        # O detalhe mostra o PDF num iframe da propria tela; o DENY padrao bloquearia.
+        resposta["X-Frame-Options"] = "SAMEORIGIN"
         return resposta
 
     @action(detail=False, methods=["post"])

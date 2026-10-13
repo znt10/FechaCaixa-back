@@ -189,6 +189,12 @@ class AcoesTests(BaseApi):
         self.assertEqual(resposta["Content-Type"], "application/pdf")
         self.assertEqual(resposta.content, b"%PDF-1.4")
 
+    def test_arquivo_pode_abrir_dentro_da_tela(self):
+        # O PDF aparece num iframe do detalhe; com o DENY padrao o navegador bloqueia.
+        comprovante = self.criar(arquivo=b"%PDF-1.4", arquivo_tipo="application/pdf")
+        resposta = self.api.get(f"/api/v1/comprovantes/{comprovante.public_id}/arquivo/")
+        self.assertEqual(resposta["X-Frame-Options"], "SAMEORIGIN")
+
     def test_sem_arquivo_e_404(self):
         comprovante = self.criar()
         resposta = self.api.get(f"/api/v1/comprovantes/{comprovante.public_id}/arquivo/")
