@@ -17,7 +17,7 @@ from app.models import Comprovante, LeituraDaCaixa, RemetenteDeComprovante
 
 from .arquivo import TAMANHO_MINIMO_DE_IMAGEM, TIPOS_ACEITOS
 from .leitura import ler_arquivo
-from .registrar import registrar_comprovante
+from .registrar import NaoEComprovante, registrar_comprovante
 
 logger = logging.getLogger(__name__)
 
@@ -187,17 +187,21 @@ def processar_mensagem(mensagem, *, uid, validade, ler=ler_arquivo):
             email_message_id=message_id, indice_anexo=indice
         ).exists():
             continue
-        comprovante = registrar_comprovante(
-            cadastro.conta,
-            conteudo,
-            tipo,
-            nome,
-            origem=Comprovante.Origem.EMAIL,
-            remetente=remetente,
-            email_message_id=message_id,
-            indice_anexo=indice,
-            ler=ler,
-        )
+        try:
+            comprovante = registrar_comprovante(
+                cadastro.conta,
+                conteudo,
+                tipo,
+                nome,
+                origem=Comprovante.Origem.EMAIL,
+                remetente=remetente,
+                email_message_id=message_id,
+                indice_anexo=indice,
+                ler=ler,
+            )
+        except NaoEComprovante:
+            # Um curriculo junto do Pix: pula este anexo, o e-mail fica no Gmail.
+            continue
         if comprovante is None:
             continue
         criados += 1

@@ -25,7 +25,7 @@ from app.services.comprovantes.arquivo import TIPOS_ACEITOS
 from app.services.comprovantes.categoria import aprender_categoria
 from app.services.comprovantes.leitura import ler_arquivo
 from app.services.comprovantes.normalizar import normalizar_nome
-from app.services.comprovantes.registrar import registrar_comprovante
+from app.services.comprovantes.registrar import NaoEComprovante, registrar_comprovante
 
 from ..serializers import ComprovanteSerializer, RemetenteDeComprovanteSerializer
 
@@ -229,16 +229,22 @@ class ComprovanteViewSet(
             if loja is None:
                 raise ValidationError({"error": "Esta loja nao existe nesta empresa."})
 
-        comprovante = registrar_comprovante(
-            conta,
-            arquivo.read(),
-            arquivo.content_type,
-            arquivo.name,
-            origem=Comprovante.Origem.SITE,
-            enviado_por=request.user,
-            loja=loja,
-            ler=ler_arquivo,
-        )
+        try:
+            comprovante = registrar_comprovante(
+                conta,
+                arquivo.read(),
+                arquivo.content_type,
+                arquivo.name,
+                origem=Comprovante.Origem.SITE,
+                enviado_por=request.user,
+                loja=loja,
+                ler=ler_arquivo,
+            )
+        except NaoEComprovante:
+            raise ValidationError(
+                {"error": "Isto não parece um comprovante de pagamento. Envie o "
+                          "comprovante do app do banco ou a foto do recibo."}
+            )
         if comprovante is None:
             return Response({"error": "Este comprovante ja foi lancado."}, status=409)
         return Response(self.get_serializer(comprovante).data, status=201)

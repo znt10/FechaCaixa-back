@@ -3,6 +3,9 @@
 Nada se perde: se a leitura falha ou o arquivo e grande demais, o comprovante
 entra em "conferir" com o motivo escrito. Devolve None so quando ele ja
 existia (mesmo ID de transacao na empresa, ou o mesmo anexo do mesmo e-mail).
+
+A excecao e o arquivo que a leitura diz nao ser comprovante (um curriculo, um
+boleto em aberto): NaoEComprovante, e nada e gravado.
 """
 
 import re
@@ -19,6 +22,10 @@ from .normalizar import data_hora, normalizar_nome, valor_decimal
 
 OK = Comprovante.Situacao.OK
 CONFERIR = Comprovante.Situacao.CONFERIR
+
+class NaoEComprovante(Exception):
+    """A leitura viu o arquivo e disse que nao e comprovante de pagamento."""
+
 
 TEXTOS = {
     "pagador_nome": 200,
@@ -76,6 +83,9 @@ def registrar_comprovante(
         comprovante.motivo = f"Não deu para ler: {erro}."
         return _gravar(comprovante)
 
+    if dados.get("e_comprovante") is False:
+        raise NaoEComprovante("Isto não parece um comprovante de pagamento.")
+
     _aplicar_leitura(comprovante, dados, loja_escolhida=loja)
     return _gravar(comprovante)
 
@@ -108,8 +118,6 @@ def _aplicar_leitura(comprovante, dados, loja_escolhida):
 
 
 def _situacao(comprovante, dados, recebido):
-    if dados.get("e_comprovante") is False:
-        return "Não parece um comprovante de pagamento.", CONFERIR
     if comprovante.valor is None:
         return "Não deu para ler o valor.", CONFERIR
     if comprovante.data_hora is None:

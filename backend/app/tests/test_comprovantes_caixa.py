@@ -124,6 +124,20 @@ class LerCaixaTests(TestCase):
         ler_caixa(CaixaFalsa({11: mensagem_de("sabrina.lima@gmail.com", anexos)}), ler=leitor)
         self.assertEqual(Comprovante.objects.get().arquivo_nome, "foto.png")
 
+    def test_anexo_que_nao_e_comprovante_e_pulado_e_o_resto_entra(self):
+        def so_o_comprovante(conteudo, tipo):
+            dados = leitor(conteudo, tipo)
+            dados["e_comprovante"] = conteudo != CURRICULO
+            return dados
+
+        CURRICULO = PDF + b"curriculo"
+        anexos = [("curriculo.pdf", "application/pdf", CURRICULO), ("pix.pdf", "application/pdf", PDF)]
+        resumo = ler_caixa(CaixaFalsa({11: mensagem_de("sabrina.lima@gmail.com", anexos)}), ler=so_o_comprovante)
+
+        self.assertEqual(resumo.comprovantes, 1)
+        self.assertEqual(resumo.falhas, 0)
+        self.assertEqual(Comprovante.objects.get().arquivo_nome, "pix.pdf")
+
     def test_tipo_nao_aceito_e_ignorado(self):
         anexos = [("convite.ics", "text/calendar", b"BEGIN:VCALENDAR")]
         ler_caixa(CaixaFalsa({11: mensagem_de("sabrina.lima@gmail.com", anexos)}), ler=leitor)
