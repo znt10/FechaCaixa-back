@@ -45,6 +45,21 @@ class EntradasComoVendaTests(TestCase):
         resultado = self.importar(("20261001", "35.00", "PIX RECEBIDO MARIA"))
         self.assertEqual((resultado.classificadas, resultado.vendas), (0, 1))
 
+    def test_subir_de_novo_resolve_as_entradas_que_ja_estavam_pendentes(self):
+        """O extrato importado antes desta regra deixou as entradas esperando:
+        subir o mesmo arquivo de novo nao traz linha nova, mas marca essas."""
+        self.vendas.ativo = False
+        self.vendas.save()
+        self.importar(("20261001", "35.00", "PIX RECEBIDO MARIA"))
+        self.assertIsNone(TransacaoBancaria.objects.get().tipo)
+        self.vendas.ativo = True
+        self.vendas.save()
+
+        resultado = self.importar(("20261001", "35.00", "PIX RECEBIDO MARIA"))
+
+        self.assertEqual((resultado.novas, resultado.vendas), (0, 1))
+        self.assertTrue(TransacaoBancaria.objects.get().automatica)
+
     def test_regra_aprendida_vence_a_venda(self):
         self.importar(("20261001", "500.00", "DEPOSITO DINHEIRO LOTERICA"))
         classificar(TransacaoBancaria.objects.get(), RECEBIMENTO, categoria=self.deposito)

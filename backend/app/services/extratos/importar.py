@@ -162,20 +162,30 @@ def importar_extrato(conta_bancaria, nome_do_arquivo, conteudo, usuario=None):
     ]
     TransacaoBancaria.objects.bulk_create(novas)
 
-    pareadas = classificadas = vendas = 0
+    # Antes do pareamento: ele cria a categoria de entre lojas, e com uma
+    # categoria ja existindo a semeadura das outras (Vendas inclusa) nao
+    # aconteceria mais.
+    garantir_categorias_de_movimento(conta)
+    pareadas = classificadas = 0
     if novas:
         datas = [transacao.data for transacao in novas]
-        # Antes do pareamento: ele cria a categoria de entre lojas, e com uma
-        # categoria ja existindo a semeadura das outras (Vendas inclusa) nao
-        # aconteceria mais.
-        garantir_categorias_de_movimento(conta)
         pareadas = parear_transferencias(conta, min(datas), max(datas))
         # Relidas do banco e nao as da lista: no MySQL o bulk_create nao
         # devolve o id, e o pareamento acabou de mudar algumas delas.
-        transacoes = list(TransacaoBancaria.objects.filter(importacao=importacao))
-        classificadas = aplicar_regras(conta, transacoes)
-        # Por ultimo: so o que o pareamento e as regras nao explicaram.
-        vendas = marcar_entradas_como_venda(conta, transacoes)
+        classificadas = aplicar_regras(
+            conta, list(TransacaoBancaria.objects.filter(importacao=importacao))
+        )
+    # Por ultimo, e fora do `if novas`: toda entrada ainda pendente da conta,
+    # e nao so as deste arquivo. O extrato subido antes desta regra deixou as
+    # entradas esperando, e subir o mesmo arquivo de novo e o que as resolve.
+    vendas = marcar_entradas_como_venda(
+        conta,
+        list(
+            TransacaoBancaria.objects.filter(
+                conta_bancaria=conta_bancaria, tipo__isnull=True, par__isnull=True, valor__gt=0
+            )
+        ),
+    )
 
     importacao.novas = len(novas)
     importacao.repetidas = len(extrato.linhas) - len(novas)
