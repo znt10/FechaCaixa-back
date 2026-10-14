@@ -26,7 +26,7 @@ Os serviços que sobem são quatro: `api`, `db` (MySQL 8), com o banco num volum
 nomeado (`mysql_data`) que o Coolify preserva entre deploys, `redis`, que só
 guarda os contadores do limite por IP (ver `docs/limite-por-ip.md`) e por isso
 não tem volume, e `comprovantes`, que lê a caixa do Gmail dos comprovantes a
-cada 5 minutos (`manage.py ler_caixa_de_comprovantes --a-cada 300`).
+cada minuto (`manage.py ler_caixa_de_comprovantes --a-cada 60`).
 
 Não há `worker` nem `beat`. O beat existia para uma tarefa agendada
 (`enviar_digest_lojas`) que saiu junto com o estoque na migration `0036`, e o
@@ -36,7 +36,7 @@ worker não tinha mais nada para entregar além dela e de um e-mail. Esse e-mail
 suficiente para não caber numa requisição, os três serviços voltam com ela.
 
 A leitura dos comprovantes é a exceção, e mesmo assim não trouxe o Celery de
-volta: é um laço só, a cada 5 minutos, sem fila nem tarefa disparada pela
+volta: é um laço só, a cada minuto, sem fila nem tarefa disparada pela
 requisição. Um serviço com a mesma imagem rodando um comando faz isso sem
 broker, sem beat e sem tabela de agendamento. Sem as variáveis abaixo, ele
 sobe, avisa no log e não lê nada.

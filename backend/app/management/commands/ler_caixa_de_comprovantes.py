@@ -1,6 +1,6 @@
 """Le a caixa de comprovantes: uma vez, ou para sempre a cada N segundos.
 
-Roda num servico proprio do compose de producao (`--a-cada 300`). A producao
+Roda num servico proprio do compose de producao (`--a-cada 60`). A producao
 nao tem worker nem beat do Celery, e trazer os dois de volta so para isto
 custaria um broker, dois servicos e uma tabela de agendamento.
 """

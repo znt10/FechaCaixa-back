@@ -118,14 +118,14 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       COMPROVANTES_EMAIL: ${COMPROVANTES_EMAIL:-}
 
-  # Le a caixa do Gmail dos comprovantes a cada 5 minutos. Mesma imagem da
+  # Le a caixa do Gmail dos comprovantes a cada minuto. Mesma imagem da
   # api, sem gunicorn: o entrypoint fica de fora (collectstatic, migrate e
   # ensure_admin sao trabalho da api, e rodar duas vezes em paralelo e corrida).
   # Espera a api ficar saudavel para so comecar com as migrations aplicadas.
   comprovantes:
     build: .
     restart: unless-stopped
-    entrypoint: ["python", "manage.py", "ler_caixa_de_comprovantes", "--a-cada", "300"]
+    entrypoint: ["python", "manage.py", "ler_caixa_de_comprovantes", "--a-cada", "60"]
     depends_on:
       api:
         condition: service_healthy
