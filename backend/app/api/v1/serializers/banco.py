@@ -107,6 +107,7 @@ class TransacaoBancariaSerializer(serializers.ModelSerializer):
         fields = [
             "id", "data", "valor", "descricao", "conta_bancaria", "tipo",
             "tipo_nome", "elemento", "categoria", "par", "classificada",
+            "automatica",
         ]
         read_only_fields = fields
 

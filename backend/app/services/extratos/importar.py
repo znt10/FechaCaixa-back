@@ -16,9 +16,10 @@ from django.db import transaction
 
 from app.models import ImportacaoDeExtrato, TransacaoBancaria
 
-from .classificar import aplicar_regras, parear_transferencias
-from .linhas import RecusaDeExtrato, assinatura_da_descricao, normalizar_descricao
+from .categorias import garantir_categorias_de_movimento
+from .classificar import aplicar_regras, marcar_entradas_como_venda, parear_transferencias
 from .csv_picpay import e_csv_do_picpay, ler_csv_picpay
+from .linhas import RecusaDeExtrato, assinatura_da_descricao, normalizar_descricao
 from .ofx import decodificar, ler_ofx
 
 
@@ -161,12 +162,17 @@ def importar_extrato(conta_bancaria, nome_do_arquivo, conteudo, usuario=None):
     pareadas = classificadas = 0
     if novas:
         datas = [transacao.data for transacao in novas]
+        # Antes do pareamento: ele cria a categoria de entre lojas, e com uma
+        # categoria ja existindo a semeadura das outras (Vendas inclusa) nao
+        # aconteceria mais.
+        garantir_categorias_de_movimento(conta)
         pareadas = parear_transferencias(conta, min(datas), max(datas))
         # Relidas do banco e nao as da lista: no MySQL o bulk_create nao
         # devolve o id, e o pareamento acabou de mudar algumas delas.
-        classificadas = aplicar_regras(
-            conta, list(TransacaoBancaria.objects.filter(importacao=importacao))
-        )
+        transacoes = list(TransacaoBancaria.objects.filter(importacao=importacao))
+        classificadas = aplicar_regras(conta, transacoes)
+        # Por ultimo: so o que o pareamento e as regras nao explicaram.
+        classificadas += marcar_entradas_como_venda(conta, transacoes)
 
     importacao.novas = len(novas)
     importacao.repetidas = len(extrato.linhas) - len(novas)

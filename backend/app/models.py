@@ -1107,6 +1107,10 @@ class CategoriaDeMovimento(BaseModel):
     # No consolidado, o que cai aqui sai da conta — o dinheiro so mudou de
     # bolso dentro da empresa.
     entre_lojas = models.BooleanField(default=False, editable=False)
+    # A categoria que a entrada sem regra recebe sozinha na importacao: numa
+    # loja, quase todo dinheiro que entra e venda. Marcada pelo mesmo motivo
+    # do `entre_lojas`; desativada, a venda automatica para.
+    vendas = models.BooleanField(default=False, editable=False)
 
     class Meta:
         ordering = ["tipo", "nome"]
@@ -1224,6 +1228,10 @@ class TransacaoBancaria(BaseModel):
     par = models.OneToOneField(
         "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
+    # Venda posta pela importacao, e nao por gente nem por regra aprendida.
+    # Continua aberta: o pareamento pode troca-la por "entre lojas" quando o
+    # extrato da outra loja chegar, e o "aplicar as iguais" pode corrigi-la.
+    automatica = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["-data", "-id"]

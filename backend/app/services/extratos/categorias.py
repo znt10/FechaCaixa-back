@@ -9,10 +9,14 @@ from django.db import transaction
 from app.models import CategoriaDeMovimento, TipoDeMovimento
 
 ENTRE_LOJAS = "Entre lojas"
+VENDAS = "Vendas (Pix/maquininha)"
+# Separado da venda: e o dinheiro da gaveta, que o fechamento de caixa ja
+# contou como venda em dinheiro. Como venda de novo, contaria duas vezes.
+DEPOSITO = "Depósito de dinheiro"
 
 CATEGORIAS_INICIAIS = {
     TipoDeMovimento.TRANSFERENCIA: [ENTRE_LOJAS, "Retirada de sócio", "Para terceiros"],
-    TipoDeMovimento.RECEBIMENTO: ["Vendas (Pix/maquininha)", "Outros"],
+    TipoDeMovimento.RECEBIMENTO: [VENDAS, DEPOSITO, "Outros"],
 }
 
 
@@ -29,7 +33,11 @@ def garantir_categorias_de_movimento(conta):
         for tipo, nomes in CATEGORIAS_INICIAIS.items():
             for nome in nomes:
                 CategoriaDeMovimento.objects.create(
-                    conta=conta, tipo=tipo, nome=nome, entre_lojas=(nome == ENTRE_LOJAS)
+                    conta=conta,
+                    tipo=tipo,
+                    nome=nome,
+                    entre_lojas=(nome == ENTRE_LOJAS),
+                    vendas=(nome == VENDAS),
                 )
     return categoria_entre_lojas(conta)
 
@@ -53,3 +61,12 @@ def categoria_entre_lojas(conta):
     return CategoriaDeMovimento.objects.create(
         conta=conta, tipo=TipoDeMovimento.TRANSFERENCIA, nome=nome, entre_lojas=True
     )
+
+
+def categoria_de_vendas(conta):
+    """A categoria da venda automatica, ou None se a empresa desativou.
+
+    Achada pela marca, como a de entre lojas. Nao e recriada se faltar: quem
+    desativou "Vendas" disse que nao quer entrada classificada sozinha.
+    """
+    return CategoriaDeMovimento.objects.filter(conta=conta, vendas=True, ativo=True).first()
