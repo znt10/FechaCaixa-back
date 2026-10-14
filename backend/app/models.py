@@ -61,6 +61,11 @@ class Conta(BaseModel):
     # de terceiro, e cada empresa entra quando aceitar, uma por vez.
     modulo_banco_ativo = models.BooleanField(default=False)
 
+    # Liga os comprovantes (gasto sem nota, lido do PDF/foto do app do banco).
+    # Default False pelo mesmo motivo dos outros modulos: cada empresa entra
+    # quando aceitar.
+    modulo_comprovantes_ativo = models.BooleanField(default=False)
+
     # O formulario sob medida. O FechaCaixa nasceu numa rede de salgados e
     # perguntava de salgado para todo mundo; quem vende outra coisa (ou nao
     # tem retirada, ou nao da lanche para a equipe) respondia "nao" toda noite
@@ -517,10 +522,14 @@ class FechamentoCaixa(BaseModel):
         """A liquidez bruta: quanto a loja movimentou no turno.
 
         `dinheiro` e o que esta FISICAMENTE na gaveta na hora de fechar — o
-        funcionario conta o que tem na mao. Retirada e despesa ja sairam dali,
-        entao voltam somando: o dinheiro saiu depois da venda, e a venda valeu.
-        A retirada nem gasto e — o dono leva para nao deixar caixa grande no
-        balcao, e o dinheiro continua sendo da empresa.
+        funcionario conta o que tem na mao. A retirada ja saiu dali, entao
+        volta somando: nem gasto e — o dono leva para nao deixar caixa grande
+        no balcao, e o dinheiro continua sendo da empresa.
+
+        A despesa NAO volta. Ela foi gasta: e dinheiro que a loja nao tem mais,
+        e somar no total fazia o caixa parecer maior do que o dinheiro que
+        existe. Ela fica so anotada (`total_das_despesas`, `registrado`), para a
+        loja avisar o que gastou. Ate 2026-10-14 ela somava.
 
         A devolucao nao volta. Ela tambem saiu da gaveta, mas cancelou a venda
         junto: as duas coisas ja se anularam no numero contado. Somar faria a
@@ -533,7 +542,7 @@ class FechamentoCaixa(BaseModel):
         `2 x retirada + despesa`. Um turno de 1.200 com 500 retirados aparecia
         como 200.
         """
-        return self.recebido + (self.valor_retirado or 0) + self.total_das_despesas
+        return self.recebido + (self.valor_retirado or 0)
 
     # Nomes antigos, mantidos so ate o frontend subir com os novos. Sem eles a
     # tela por-loja (que le total_liquido) zera na janela entre um deploy e o
@@ -1390,3 +1399,157 @@ class Pagamento(BaseModel):
 
     def __str__(self):
         return f"{self.assinatura.conta.nome} - {self.valor} - {self.get_status_display()}"
+
+
+class RemetenteDeComprovante(BaseModel):
+    """Um e-mail que pode mandar comprovante para uma empresa.
+
+    E pelo remetente que o e-mail que chega na caixa unica descobre de qual
+    empresa e. Unico no sistema inteiro: o mesmo e-mail em duas empresas
+    deixaria o comprovante sem dono certo.
+    """
+
+    conta = models.ForeignKey(
+        Conta, on_delete=models.CASCADE, related_name="remetentes_de_comprovante"
+    )
+    email = models.EmailField(unique=True)
+
+    class Meta:
+        ordering = ["email"]
+
+    def save(self, *args, **kwargs):
+        # O "From" chega com a caixa que o celular quiser; a comparacao e em
+        # minusculas, entao o cadastro tambem.
+        self.email = (self.email or "").strip().lower()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.email} - {self.conta.nome}"
+
+
+class Comprovante(BaseModel):
+    """Um comprovante de pagamento: gasto sem nota, lido do arquivo do banco.
+
+    Nasce de um anexo de e-mail ou de um envio pelo site. O que foi lido fica
+    nos campos; a resposta crua da leitura fica em `leitura_bruta`.
+    """
+
+    class Situacao(models.TextChoices):
+        OK = "OK", "OK"
+        CONFERIR = "CONFERIR", "Conferir"
+        DESCARTADO = "DESCARTADO", "Descartado"
+
+    class Origem(models.TextChoices):
+        EMAIL = "EMAIL", "E-mail"
+        SITE = "SITE", "Site"
+
+    conta = models.ForeignKey(Conta, on_delete=models.CASCADE, related_name="comprovantes")
+    # Nulo = sem loja: soma so no total da empresa. PROTECT pelo mesmo motivo
+    # da nota: gasto lancado e contabilidade.
+    loja = models.ForeignKey(
+        Loja, on_delete=models.PROTECT, null=True, blank=True, related_name="comprovantes"
+    )
+    origem = models.CharField(max_length=10, choices=Origem.choices)
+    situacao = models.CharField(
+        max_length=12, choices=Situacao.choices, default=Situacao.CONFERIR
+    )
+    motivo = models.CharField(max_length=200, blank=True)
+
+    valor = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    data_hora = models.DateTimeField(null=True, blank=True)
+    # NULL e nao "" quando nao ha ID (papel da loterica): a unicidade abaixo
+    # compara "" com "", e o segundo comprovante sem ID seria recusado.
+    id_transacao = models.CharField(max_length=64, null=True, blank=True)
+
+    pagador_nome = models.CharField(max_length=200, blank=True)
+    pagador_documento = models.CharField(max_length=30, blank=True)
+    pagador_banco = models.CharField(max_length=100, blank=True)
+    pagador_agencia = models.CharField(max_length=20, blank=True)
+    pagador_conta = models.CharField(max_length=30, blank=True)
+    recebedor_nome = models.CharField(max_length=200, blank=True)
+    recebedor_documento = models.CharField(max_length=30, blank=True)
+    recebedor_banco = models.CharField(max_length=100, blank=True)
+    # A chave da categoria aprendida: maiusculas, sem acento, espacos colapsados.
+    recebedor_normalizado = models.CharField(max_length=200, blank=True)
+
+    elemento = models.ForeignKey(
+        ElementoDeDespesa,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="comprovantes",
+    )
+
+    # No banco pelo mesmo motivo do xml_bruto da nota: o disco do container
+    # some a cada deploy. Foto reduzida (~150 KB); PDF como veio.
+    arquivo = models.BinaryField(null=True, blank=True)
+    arquivo_tipo = models.CharField(max_length=50, blank=True)
+    arquivo_nome = models.CharField(max_length=255, blank=True)
+
+    leitura_bruta = models.JSONField(null=True, blank=True)
+    # Os campos que alguem corrigiu na mao: leitura nenhuma sobrescreve.
+    campos_editados = models.JSONField(default=list, blank=True)
+
+    remetente = models.EmailField(blank=True)
+    email_message_id = models.CharField(max_length=255, null=True, blank=True)
+    indice_anexo = models.PositiveSmallIntegerField(null=True, blank=True)
+    enviado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="comprovantes_enviados",
+    )
+
+    class Meta:
+        ordering = ["-data_hora", "-created_at"]
+        constraints = [
+            # Sem `condition`: o MySQL ignora. NULL nao colide com NULL.
+            models.UniqueConstraint(
+                fields=["conta", "id_transacao"], name="comprovante_id_unico_por_conta"
+            ),
+            models.UniqueConstraint(
+                fields=["email_message_id", "indice_anexo"],
+                name="comprovante_anexo_unico_por_email",
+            ),
+        ]
+        indexes = [models.Index(fields=["conta", "data_hora"])]
+
+    def __str__(self):
+        return f"{self.recebedor_nome or 'Comprovante'} - {self.valor}"
+
+
+class RegraDeCategoriaDoRecebedor(BaseModel):
+    """Nesta empresa, este recebedor e desta categoria.
+
+    Aprendida quando alguem classifica um comprovante: o proximo para o mesmo
+    recebedor ja chega classificado. Pelo nome, e nao pelo documento, porque o
+    documento do recebedor vem mascarado.
+    """
+
+    conta = models.ForeignKey(
+        Conta, on_delete=models.CASCADE, related_name="regras_de_recebedor"
+    )
+    recebedor_normalizado = models.CharField(max_length=200)
+    elemento = models.ForeignKey(
+        ElementoDeDespesa, on_delete=models.CASCADE, related_name="regras_de_recebedor"
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["conta", "recebedor_normalizado"],
+                name="regra_de_recebedor_unica_por_conta",
+            )
+        ]
+
+
+class LeituraDaCaixa(models.Model):
+    """Ate onde a caixa de comprovantes ja foi lida. Uma linha so (pk=1).
+
+    Pelo UID do IMAP, e nao por "nao lidos": um e-mail aberto no Gmail antes
+    da volta de 5 minutos seria pulado, e a caixa ja tinha 985 e-mails antigos.
+    """
+
+    uid_validade = models.BigIntegerField(null=True, blank=True)
+    ultimo_uid = models.BigIntegerField(null=True, blank=True)

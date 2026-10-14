@@ -114,6 +114,37 @@ services:
       EMAIL_HOST_USER: ${EMAIL_HOST_USER}
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-FechaCaixa <no-reply@fechacaixa.local>}
+      # Comprovantes: leitura do envio pelo site (Haiku). Ver docs/DEPLOY-COOLIFY.md.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      COMPROVANTES_EMAIL: ${COMPROVANTES_EMAIL:-}
+
+  # Le a caixa do Gmail dos comprovantes a cada minuto. Mesma imagem da
+  # api, sem gunicorn: o entrypoint fica de fora (collectstatic, migrate e
+  # ensure_admin sao trabalho da api, e rodar duas vezes em paralelo e corrida).
+  # Espera a api ficar saudavel para so comecar com as migrations aplicadas.
+  comprovantes:
+    build: .
+    restart: unless-stopped
+    entrypoint: ["python", "manage.py", "ler_caixa_de_comprovantes", "--a-cada", "60"]
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      SECRET_KEY: ${SECRET_KEY:?defina SECRET_KEY}
+      DEBUG: "False"
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?defina ALLOWED_HOSTS}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?defina CORS_ALLOWED_ORIGINS}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?defina CSRF_TRUSTED_ORIGINS}
+      DB_ENGINE: django.db.backends.mysql
+      DB_NAME: ${DB_NAME:-fechacaixa}
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: "3306"
+      CACHE_REDIS_URL: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      COMPROVANTES_EMAIL: ${COMPROVANTES_EMAIL:-}
+      COMPROVANTES_SENHA_APP: ${COMPROVANTES_SENHA_APP:-}
 
 volumes:
   mysql_data:

@@ -2,6 +2,8 @@ from django.contrib import admin
 
 from .models import (
     Assinatura,
+    Comprovante,
+    RemetenteDeComprovante,
     CategoriaDeMovimento,
     CategoriaDeSalgado,
     Conta,
@@ -386,3 +388,43 @@ class PagamentoAdmin(admin.ModelAdmin):
         "assinatura", "origem", "valor", "informado_por", "informado_em",
         "resolvido_por", "resolvido_em", "paga_ate_depois",
     )
+
+
+# Os comprovantes. Aqui o superusuario acha e apaga os de teste: apagar remove
+# de verdade e libera o ID da transacao, que o "descartar" da tela segura.
+# Ninguem cria pelo admin: o comprovante nasce do e-mail ou do envio pelo site.
+@admin.register(Comprovante)
+class ComprovanteAdmin(admin.ModelAdmin):
+    list_display = (
+        "created_at", "conta", "valor", "data_hora", "recebedor_nome", "loja",
+        "situacao", "origem", "remetente",
+    )
+    list_filter = ("conta", "situacao", "origem")
+    search_fields = ("recebedor_nome", "id_transacao", "remetente", "arquivo_nome")
+    date_hierarchy = "created_at"
+    list_select_related = ("conta", "loja")
+    # O que foi lido e prova, como no extrato: so a classificacao se mexe pela tela.
+    readonly_fields = (
+        "conta", "origem", "valor", "data_hora", "id_transacao", "pagador_nome",
+        "pagador_documento", "pagador_banco", "pagador_agencia", "pagador_conta",
+        "recebedor_nome", "recebedor_documento", "recebedor_banco", "arquivo_nome",
+        "arquivo_tipo", "remetente", "email_message_id", "indice_anexo",
+        "enviado_por", "leitura_bruta", "campos_editados",
+    )
+    exclude = ("recebedor_normalizado",)
+
+    def get_queryset(self, request):
+        # Sem os bytes do arquivo: a lista tem 100 linhas, e cada PDF ou foto
+        # pode ter megas.
+        return super().get_queryset(request).defer("arquivo")
+
+    def has_add_permission(self, request):
+        return False
+
+
+@admin.register(RemetenteDeComprovante)
+class RemetenteDeComprovanteAdmin(admin.ModelAdmin):
+    list_display = ("email", "conta")
+    list_filter = ("conta",)
+    search_fields = ("email",)
+    autocomplete_fields = ("conta",)

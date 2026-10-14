@@ -22,10 +22,11 @@ No projeto do Coolify: **+ New → Docker Compose** apontando para este reposit�
 | Docker Compose Location | `/docker-compose.prod.yml` |
 | Domínio | no serviço `api`, porta `8000` |
 
-Os serviços que sobem são três: `api`, `db` (MySQL 8), com o banco num volume
-nomeado (`mysql_data`) que o Coolify preserva entre deploys, e `redis`, que só
+Os serviços que sobem são quatro: `api`, `db` (MySQL 8), com o banco num volume
+nomeado (`mysql_data`) que o Coolify preserva entre deploys, `redis`, que só
 guarda os contadores do limite por IP (ver `docs/limite-por-ip.md`) e por isso
-não tem volume.
+não tem volume, e `comprovantes`, que lê a caixa do Gmail dos comprovantes a
+cada minuto (`manage.py ler_caixa_de_comprovantes --a-cada 60`).
 
 Não há `worker` nem `beat`. O beat existia para uma tarefa agendada
 (`enviar_digest_lojas`) que saiu junto com o estoque na migration `0036`, e o
@@ -33,6 +34,12 @@ worker não tinha mais nada para entregar além dela e de um e-mail. Esse e-mail
 — o de "esqueci a senha" — passa a sair dentro da própria requisição, por
 `CELERY_TASK_ALWAYS_EAGER`. Se um dia voltar a existir tarefa pesada o
 suficiente para não caber numa requisição, os três serviços voltam com ela.
+
+A leitura dos comprovantes é a exceção, e mesmo assim não trouxe o Celery de
+volta: é um laço só, a cada minuto, sem fila nem tarefa disparada pela
+requisição. Um serviço com a mesma imagem rodando um comando faz isso sem
+broker, sem beat e sem tabela de agendamento. Sem as variáveis abaixo, ele
+sobe, avisa no log e não lê nada.
 
 ### Variáveis (aba Environment Variables)
 
@@ -50,6 +57,9 @@ suficiente para não caber numa requisição, os três serviços voltam com ela.
 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | conta SMTP (sem elas, nenhum e-mail sai — inclusive o de "esqueci a senha") |
 | `DEFAULT_FROM_EMAIL` | opcional |
 | `PROXY_SEGREDO` | gere um: `openssl rand -hex 32`. **O mesmo** no recurso do front |
+| `ANTHROPIC_API_KEY` | chave da API da Anthropic (console.anthropic.com, organização FechaCaixa). Sem ela, todo comprovante entra em "conferir" |
+| `COMPROVANTES_EMAIL` | `fechacaixacomprovante@gmail.com` |
+| `COMPROVANTES_SENHA_APP` | a senha de app do Gmail (myaccount.google.com/apppasswords) |
 
 O banco não tem variável de endereço: `DB_HOST=db` é fixo no compose, porque só
 faz sentido dentro desta rede.

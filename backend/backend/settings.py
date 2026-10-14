@@ -285,3 +285,11 @@ MENSALIDADE_EMAIL_AVISO = os.getenv("MENSALIDADE_EMAIL_AVISO", "")
 PIX_CHAVE = os.getenv("PIX_CHAVE", "")
 PIX_NOME_RECEBEDOR = os.getenv("PIX_NOME_RECEBEDOR", "")
 PIX_CIDADE = os.getenv("PIX_CIDADE", "")
+
+# ─── Comprovantes ─────────────────────────────────────────────────────────────
+# A caixa do Gmail que recebe os comprovantes, lida por IMAP com senha de app.
+# Vazias = a leitura da caixa nao roda (o resto do sistema segue normal).
+# ANTHROPIC_API_KEY nao passa por aqui: o SDK le direto do ambiente.
+COMPROVANTES_EMAIL = os.getenv("COMPROVANTES_EMAIL", "")
+COMPROVANTES_SENHA_APP = os.getenv("COMPROVANTES_SENHA_APP", "").replace(" ", "")
+COMPROVANTES_MODELO = os.getenv("COMPROVANTES_MODELO", "claude-haiku-5-5")
