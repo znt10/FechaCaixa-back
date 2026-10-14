@@ -9,7 +9,7 @@ from PIL import Image
 from app.models import Comprovante, Conta, ElementoDeDespesa
 from app.services.comprovantes.categoria import aprender_categoria
 from app.services.comprovantes.leitura import CAMPOS, LeituraIndisponivel
-from app.services.comprovantes.registrar import registrar_comprovante
+from app.services.comprovantes.registrar import NaoEComprovante, registrar_comprovante
 from app.services.plano_de_contas import garantir_plano_de_contas
 
 from .fabricas import conta_padrao, criar_loja
@@ -109,9 +109,11 @@ class RegistrarTests(TestCase):
         self.assertEqual(comprovante.situacao, Comprovante.Situacao.CONFERIR)
         self.assertIn("valor", comprovante.motivo)
 
-    def test_nao_e_comprovante_vai_para_conferir(self):
-        comprovante = self.registrar(leitura(e_comprovante=False))
-        self.assertEqual(comprovante.situacao, Comprovante.Situacao.CONFERIR)
+    def test_nao_e_comprovante_e_recusado_e_nada_e_gravado(self):
+        # Um curriculo em PDF: nao entra nem em conferir.
+        with self.assertRaises(NaoEComprovante):
+            self.registrar(leitura(e_comprovante=False))
+        self.assertFalse(Comprovante.objects.exists())
 
     def test_leitura_falhando_guarda_o_arquivo_para_conferir(self):
         def quebrado(conteudo, tipo):

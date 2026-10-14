@@ -43,6 +43,18 @@ class EnviarPeloSiteTests(BaseApi):
         self.assertEqual(comprovante.origem, "SITE")
         self.assertEqual(comprovante.enviado_por, self.user)
 
+    def test_arquivo_que_nao_e_comprovante_e_recusado(self):
+        def curriculo(conteudo, tipo):
+            dados = leitura_falsa(conteudo, tipo)
+            dados["e_comprovante"] = False
+            return dados
+
+        with mock.patch("app.api.v1.views.comprovantes.ler_arquivo", curriculo):
+            resposta = self.enviar(nome="curriculo.pdf")
+        self.assertEqual(resposta.status_code, 400)
+        self.assertIn("não parece um comprovante", resposta.json()["error"])
+        self.assertFalse(Comprovante.objects.exists())
+
     def test_loja_escolhida_vai_junto(self):
         resposta = self.enviar(loja=str(self.loja.public_id))
         # Pelo JSON, que e o que o front le: em `resposta.data` o id e um UUID.
