@@ -14,7 +14,8 @@ from django.db.models import Q
 
 from app.models import RegraDeClassificacao, TipoDeMovimento, TransacaoBancaria
 
-from .categorias import categoria_entre_lojas
+from .categorias import categoria_de_vendas, categoria_entre_lojas
+from .linhas import normalizar_descricao
 
 # Pix cai na hora e TED no mesmo dia, mas o extrato de um banco pode datar a
 # saida no dia em que foi agendada e o outro a entrada no dia seguinte.
@@ -32,9 +33,9 @@ class ClassificacaoInvalida(Exception):
 def _candidatas_a_par(conta, de, ate):
     """O que ainda pode ser uma ponta de transferencia entre lojas.
 
-    Sem tipo, ou ja marcada como entre lojas por uma regra aprendida mas ainda
-    sem a outra ponta — o extrato da Loja B pode chegar uma semana depois do
-    da Loja A.
+    Sem tipo, ja marcada como entre lojas por uma regra aprendida mas ainda
+    sem a outra ponta, ou venda automatica — o extrato da Loja B pode chegar
+    uma semana depois do da Loja A, e a entrada de A ja tera virado venda.
     """
     return list(
         TransacaoBancaria.objects.filter(
@@ -43,7 +44,9 @@ def _candidatas_a_par(conta, de, ate):
             data__gte=de - JANELA_DO_PAR,
             data__lte=ate + JANELA_DO_PAR,
         )
-        .filter(Q(tipo__isnull=True) | Q(categoria__entre_lojas=True))
+        .filter(
+            Q(tipo__isnull=True) | Q(categoria__entre_lojas=True) | Q(automatica=True)
+        )
         .order_by("data", "id")
     )
 
@@ -97,8 +100,10 @@ def parear_transferencias(conta, de, ate):
                 ponta.categoria = categoria
                 ponta.elemento = None
                 ponta.par = outra
-            saida.save(update_fields=["tipo", "categoria", "elemento", "par"])
-            entrada.save(update_fields=["tipo", "categoria", "elemento", "par"])
+                ponta.automatica = False
+            campos = ["tipo", "categoria", "elemento", "par", "automatica"]
+            saida.save(update_fields=campos)
+            entrada.save(update_fields=campos)
         entradas_por_valor[entrada.valor].remove(entrada)
         pares += 1
 
@@ -134,6 +139,51 @@ def aplicar_regras(conta, transacoes):
         classificadas, ["tipo", "elemento", "categoria"]
     )
     return len(classificadas)
+
+
+# O cofrinho do PicPay: o dinheiro so muda de lugar dentro da mesma conta.
+# Resgatar nao e vender — a entrada fica para a gerente, que ensina uma vez.
+MOVIMENTOS_INTERNOS = ("DINHEIRO GUARDADO", "DINHEIRO RESGATADO")
+
+
+def marcar_entradas_como_venda(conta, transacoes):
+    """A entrada que sobrou sem tipo vira Recebimento > Vendas, automatica.
+
+    Roda depois do pareamento e das regras, entao so pega o que nenhum dos
+    dois explicou. Ficam de fora o cofrinho e a entrada que ainda pode ser uma
+    ponta de transferencia (ha uma saida compativel em outra conta da
+    empresa): na duvida o pareamento ja deixa para a gerente, e virar venda
+    poria a transferencia na venda em silencio. Devolve quantas marcou.
+    """
+    entradas = [
+        t for t in transacoes
+        if t.tipo is None and t.par_id is None and t.valor > 0
+        and not normalizar_descricao(t.descricao).startswith(MOVIMENTOS_INTERNOS)
+    ]
+    if not entradas:
+        return 0
+    categoria = categoria_de_vendas(conta)
+    if categoria is None:
+        return 0
+
+    datas = [t.data for t in entradas]
+    saidas_abertas = [
+        t for t in _candidatas_a_par(conta, min(datas), max(datas)) if t.valor < 0
+    ]
+    marcadas = []
+    for entrada in entradas:
+        if any(_pontas_compativeis(saida, entrada) for saida in saidas_abertas):
+            continue
+        entrada.tipo = TipoDeMovimento.RECEBIMENTO
+        entrada.categoria = categoria
+        entrada.elemento = None
+        entrada.automatica = True
+        marcadas.append(entrada)
+
+    TransacaoBancaria.objects.bulk_update(
+        marcadas, ["tipo", "categoria", "elemento", "automatica"]
+    )
+    return len(marcadas)
 
 
 def conferir_classificacao(tipo, elemento, categoria):
@@ -197,7 +247,8 @@ def classificar(transacao, tipo, elemento=None, categoria=None, aplicar_as_iguai
     transacao.tipo = tipo
     transacao.elemento = elemento
     transacao.categoria = categoria
-    transacao.save(update_fields=["tipo", "elemento", "categoria", "par"])
+    transacao.automatica = False
+    transacao.save(update_fields=["tipo", "elemento", "categoria", "par", "automatica"])
 
     if tipo is None or not transacao.assinatura:
         return 0
@@ -215,12 +266,14 @@ def classificar(transacao, tipo, elemento=None, categoria=None, aplicar_as_iguai
     sentido = {"valor__gt": 0} if transacao.entrada else {"valor__lt": 0}
     return (
         TransacaoBancaria.objects.filter(
+            # A venda automatica tambem: o primeiro deposito da loterica chega
+            # como venda, e corrigir um tem que corrigir os iguais.
+            Q(tipo__isnull=True) | Q(automatica=True),
             conta_id=transacao.conta_id,
             assinatura=transacao.assinatura,
-            tipo__isnull=True,
             par__isnull=True,
             **sentido,
         )
         .exclude(pk=transacao.pk)
-        .update(tipo=tipo, elemento=elemento, categoria=categoria)
+        .update(tipo=tipo, elemento=elemento, categoria=categoria, automatica=False)
     )

@@ -283,7 +283,9 @@ class PareamentoEntreLojasTests(TestCase):
         self.importar_b(("20261004", "500.00", "TED"))
         saida, entrada = self.pontas()
         self.assertIsNone(saida.par_id)
-        self.assertIsNone(entrada.tipo)
+        self.assertIsNone(entrada.par_id)
+        # Longe demais para ser a outra ponta: entra como venda automatica.
+        self.assertNotEqual(entrada.tipo, TRANSFERENCIA)
 
     def test_na_duvida_nao_pareia(self):
         """Duas entradas de 500 no dia: uma pode ser venda. Escolher seria chutar."""
@@ -375,7 +377,9 @@ class ClassificacaoTests(TestCase):
 
         self.importar(("20261002", "80.00", "PIX FULANO"))
 
-        self.assertIsNone(TransacaoBancaria.objects.get(valor__gt=0).tipo)
+        # Nao virou Pagamento: entrou como a venda automatica de toda entrada.
+        entrada = TransacaoBancaria.objects.get(valor__gt=0)
+        self.assertEqual((entrada.tipo, entrada.elemento, entrada.automatica), (RECEBIMENTO, None, True))
 
     def test_aplicar_as_iguais(self):
         self.importar(
@@ -385,11 +389,14 @@ class ClassificacaoTests(TestCase):
             ("20261003", "40.00", "OUTRA COISA"),
         )
         primeira = TransacaoBancaria.objects.get(valor=Decimal("25.00"))
+        # "Outros", e nao Vendas: toda entrada ja chega como venda automatica,
+        # e o que se mede aqui e so o que o "aplicar as iguais" levou junto.
+        outros = CategoriaDeMovimento.objects.get(tipo=RECEBIMENTO, nome="Outros")
 
-        iguais = classificar(primeira, RECEBIMENTO, categoria=self.vendas, aplicar_as_iguais=True)
+        iguais = classificar(primeira, RECEBIMENTO, categoria=outros, aplicar_as_iguais=True)
 
         self.assertEqual(iguais, 1)
-        self.assertEqual(TransacaoBancaria.objects.filter(categoria=self.vendas).count(), 2)
+        self.assertEqual(TransacaoBancaria.objects.filter(categoria=outros).count(), 2)
 
     def test_limpar_a_classificacao_nao_apaga_a_regra(self):
         self.importar(("20261001", "-80.00", "SAQUE"))
@@ -617,12 +624,19 @@ class ApiDoBancoTests(CenarioDoBanco):
         self.assertEqual(so_b["entradas"], "500.00")
         self.assertEqual(so_b["saidas"], "-500.00")
 
+    def test_lista_diz_qual_entrada_virou_venda_sozinha(self):
+        """A tela marca a venda automatica: e ela que a gerente pode corrigir."""
+        importar_extrato(self.banco_a, "a.ofx", ofx([("20261001", "3.00", "Y")], conta="11111-1"))
+        item = self.api.get("/api/v1/transacoes-bancarias/").data["results"][0]
+        self.assertTrue(item["automatica"])
+
     def test_resumo_conta_o_que_falta_classificar(self):
         importar_extrato(
             self.banco_a, "a.ofx", ofx([("20261001", "-7.00", "X"), ("20261001", "3.00", "Y")], conta="11111-1")
         )
         resumo = self.api.get("/api/v1/transacoes-bancarias/resumo/").data
-        self.assertEqual(resumo["pendentes"], {"quantidade": 2, "valor": "-4.00"})
+        # A entrada de 3 entrou como venda automatica: so a saida espera.
+        self.assertEqual(resumo["pendentes"], {"quantidade": 1, "valor": "-7.00"})
 
     def test_modulo_desligado_da_403(self):
         self.conta.modulo_banco_ativo = False

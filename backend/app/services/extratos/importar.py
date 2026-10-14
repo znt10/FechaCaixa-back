@@ -16,7 +16,9 @@ from django.db import transaction
 
 from app.models import ImportacaoDeExtrato, TransacaoBancaria
 
-from .classificar import aplicar_regras, parear_transferencias
+from .categorias import garantir_categorias_de_movimento
+from .classificar import aplicar_regras, marcar_entradas_como_venda, parear_transferencias
+from .csv_picpay import e_csv_do_picpay, ler_csv_picpay
 from .linhas import RecusaDeExtrato, assinatura_da_descricao, normalizar_descricao
 from .ofx import decodificar, ler_ofx
 
@@ -28,6 +30,9 @@ class ResultadoDaImportacao:
     repetidas: int
     pareadas: int
     classificadas: int
+    # Entradas que viraram venda sozinhas: contadas a parte, porque
+    # "classificadas" e o que a gerente ja tinha respondido.
+    vendas: int = 0
 
 
 def chaves_das_linhas(linhas):
@@ -88,16 +93,17 @@ def conferir_a_conta(conta_bancaria, conta_no_arquivo):
 def ler_arquivo(nome_do_arquivo, conteudo):
     """O ExtratoLido, escolhendo o leitor pelo conteudo e nao so pelo nome.
 
-    Por enquanto so OFX. O CSV do PicPay entra aqui quando houver um arquivo
-    de exemplo para o leitor ser escrito contra ele.
+    OFX de qualquer banco, e o CSV do PicPay, que nao exporta OFX.
     """
     comeco = conteudo[:4096]
     if isinstance(comeco, bytes):
         comeco = comeco.decode("latin-1")
+    if e_csv_do_picpay(comeco):
+        return ler_csv_picpay(conteudo)
     if "OFX" in comeco.upper() or nome_do_arquivo.lower().endswith(".ofx"):
         return ler_ofx(conteudo)
     raise RecusaDeExtrato(
-        "Por enquanto o sistema lê extratos em OFX. No internet banking, "
+        "O sistema lê extratos em OFX e o CSV do PicPay. No internet banking, "
         "exporte o extrato escolhendo o formato OFX."
     )
 
@@ -156,6 +162,10 @@ def importar_extrato(conta_bancaria, nome_do_arquivo, conteudo, usuario=None):
     ]
     TransacaoBancaria.objects.bulk_create(novas)
 
+    # Antes do pareamento: ele cria a categoria de entre lojas, e com uma
+    # categoria ja existindo a semeadura das outras (Vendas inclusa) nao
+    # aconteceria mais.
+    garantir_categorias_de_movimento(conta)
     pareadas = classificadas = 0
     if novas:
         datas = [transacao.data for transacao in novas]
@@ -165,6 +175,17 @@ def importar_extrato(conta_bancaria, nome_do_arquivo, conteudo, usuario=None):
         classificadas = aplicar_regras(
             conta, list(TransacaoBancaria.objects.filter(importacao=importacao))
         )
+    # Por ultimo, e fora do `if novas`: toda entrada ainda pendente da conta,
+    # e nao so as deste arquivo. O extrato subido antes desta regra deixou as
+    # entradas esperando, e subir o mesmo arquivo de novo e o que as resolve.
+    vendas = marcar_entradas_como_venda(
+        conta,
+        list(
+            TransacaoBancaria.objects.filter(
+                conta_bancaria=conta_bancaria, tipo__isnull=True, par__isnull=True, valor__gt=0
+            )
+        ),
+    )
 
     importacao.novas = len(novas)
     importacao.repetidas = len(extrato.linhas) - len(novas)
@@ -176,4 +197,5 @@ def importar_extrato(conta_bancaria, nome_do_arquivo, conteudo, usuario=None):
         repetidas=importacao.repetidas,
         pareadas=pareadas,
         classificadas=classificadas,
+        vendas=vendas,
     )
