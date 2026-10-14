@@ -117,6 +117,14 @@ services:
       # Comprovantes: leitura do envio pelo site (Haiku). Ver docs/DEPLOY-COOLIFY.md.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       COMPROVANTES_EMAIL: ${COMPROVANTES_EMAIL:-}
+      # Mensalidade: a chave Pix, o nome e a cidade vao dentro do QR Code (dado
+      # pessoal do dono, por isso so no ambiente). Sem PIX_CHAVE a tela diz que
+      # o Pix nao foi configurado; a regra de bloqueio nao depende dele.
+      MENSALIDADE_VALOR_PADRAO: ${MENSALIDADE_VALOR_PADRAO:-100.00}
+      MENSALIDADE_EMAIL_AVISO: ${MENSALIDADE_EMAIL_AVISO:-}
+      PIX_CHAVE: ${PIX_CHAVE:-}
+      PIX_NOME_RECEBEDOR: ${PIX_NOME_RECEBEDOR:-}
+      PIX_CIDADE: ${PIX_CIDADE:-}
 
   # Le a caixa do Gmail dos comprovantes a cada minuto. Mesma imagem da
   # api, sem gunicorn: o entrypoint fica de fora (collectstatic, migrate e

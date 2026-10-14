@@ -57,6 +57,9 @@ sobe, avisa no log e não lê nada.
 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | conta SMTP (sem elas, nenhum e-mail sai — inclusive o de "esqueci a senha") |
 | `DEFAULT_FROM_EMAIL` | opcional |
 | `PROXY_SEGREDO` | gere um: `openssl rand -hex 32`. **O mesmo** no recurso do front |
+| `PIX_CHAVE` / `PIX_NOME_RECEBEDOR` / `PIX_CIDADE` | a chave Pix, o nome e a cidade de quem recebe a mensalidade: vão dentro do QR Code. Sem `PIX_CHAVE`, a tela da mensalidade diz que o Pix não foi configurado |
+| `MENSALIDADE_VALOR_PADRAO` | opcional, padrão `100.00`: o valor da empresa nova (cada uma se ajusta depois na tela Plataforma) |
+| `MENSALIDADE_EMAIL_AVISO` | opcional: o e-mail do dono, que recebe o aviso de "já paguei" |
 | `ANTHROPIC_API_KEY` | chave da API da Anthropic (console.anthropic.com, organização FechaCaixa). Sem ela, todo comprovante entra em "conferir" |
 | `COMPROVANTES_EMAIL` | `fechacaixacomprovante@gmail.com` |
 | `COMPROVANTES_SENHA_APP` | a senha de app do Gmail (myaccount.google.com/apppasswords) |
