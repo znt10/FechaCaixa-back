@@ -512,10 +512,14 @@ class FechamentoCaixa(BaseModel):
         """A liquidez bruta: quanto a loja movimentou no turno.
 
         `dinheiro` e o que esta FISICAMENTE na gaveta na hora de fechar — o
-        funcionario conta o que tem na mao. Retirada e despesa ja sairam dali,
-        entao voltam somando: o dinheiro saiu depois da venda, e a venda valeu.
-        A retirada nem gasto e — o dono leva para nao deixar caixa grande no
-        balcao, e o dinheiro continua sendo da empresa.
+        funcionario conta o que tem na mao. A retirada ja saiu dali, entao
+        volta somando: nem gasto e — o dono leva para nao deixar caixa grande
+        no balcao, e o dinheiro continua sendo da empresa.
+
+        A despesa NAO volta. Ela foi gasta: e dinheiro que a loja nao tem mais,
+        e somar no total fazia o caixa parecer maior do que o dinheiro que
+        existe. Ela fica so anotada (`total_das_despesas`, `registrado`), para a
+        loja avisar o que gastou. Ate 2026-10-14 ela somava.
 
         A devolucao nao volta. Ela tambem saiu da gaveta, mas cancelou a venda
         junto: as duas coisas ja se anularam no numero contado. Somar faria a
@@ -528,7 +532,7 @@ class FechamentoCaixa(BaseModel):
         `2 x retirada + despesa`. Um turno de 1.200 com 500 retirados aparecia
         como 200.
         """
-        return self.recebido + (self.valor_retirado or 0) + self.total_das_despesas
+        return self.recebido + (self.valor_retirado or 0)
 
     # Nomes antigos, mantidos so ate o frontend subir com os novos. Sem eles a
     # tela por-loja (que le total_liquido) zera na janela entre um deploy e o
