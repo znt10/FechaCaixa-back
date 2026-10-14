@@ -11,6 +11,7 @@ from .banco import (
     TransacaoBancariaSerializer,
 )
 from .catalogo_de_salgados import CategoriaDeSalgadoSerializer, SalgadoSerializer
+from .comprovantes import ComprovanteSerializer, RemetenteDeComprovanteSerializer
 from .contas import ContaSerializer
 from .fechamentos import (
     ConsumoDoTurnoSerializer,
@@ -35,6 +36,8 @@ from .notas import (  # noqa: F401
 from .usuarios import UsuarioSerializer
 
 __all__ = [
+    "ComprovanteSerializer",
+    "RemetenteDeComprovanteSerializer",
     "AcessoAoFormularioSerializer",
     "CategoriaDeMovimentoSerializer",
     "CategoriaDeSalgadoSerializer",
