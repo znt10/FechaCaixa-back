@@ -137,10 +137,15 @@ class RegistrarTests(TestCase):
         self.assertIsNone(comprovante.arquivo)
         self.assertIn("10 MB", comprovante.motivo)
 
-    def test_envio_pelo_site_sempre_espera_confirmacao(self):
+    def test_envio_pelo_site_com_valor_e_data_ja_fica_ok(self):
         comprovante = self.registrar(origem="SITE")
-        self.assertEqual(comprovante.situacao, Comprovante.Situacao.CONFERIR)
+        self.assertEqual(comprovante.situacao, Comprovante.Situacao.OK)
         self.assertEqual(comprovante.motivo, "")
+
+    def test_envio_pelo_site_sem_valor_vai_para_conferir(self):
+        comprovante = self.registrar(leitura(valor=None), origem="SITE")
+        self.assertEqual(comprovante.situacao, Comprovante.Situacao.CONFERIR)
+        self.assertEqual(comprovante.motivo, "Não deu para ler o valor.")
 
     def test_loja_escolhida_no_site_vence_a_leitura(self):
         outra_loja = criar_loja(nome_loja="Loja B", cidade="Patos", endereco="Rua 2")
