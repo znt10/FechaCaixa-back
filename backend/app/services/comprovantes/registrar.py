@@ -116,9 +116,6 @@ def _situacao(comprovante, dados, recebido):
         return "Não deu para ler a data.", CONFERIR
     if recebido:
         return "Parece Pix recebido: o dinheiro entrou na loja.", CONFERIR
-    if comprovante.origem == Comprovante.Origem.SITE:
-        # Quem subiu pelo site confere na hora e confirma.
-        return "", CONFERIR
     return "", OK
 
 

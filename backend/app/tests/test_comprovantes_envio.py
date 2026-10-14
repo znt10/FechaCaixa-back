@@ -34,10 +34,10 @@ class EnviarPeloSiteTests(BaseApi):
             format="multipart",
         )
 
-    def test_envio_volta_lido_para_conferir(self):
+    def test_envio_lido_por_inteiro_volta_ok(self):
         resposta = self.enviar()
         self.assertEqual(resposta.status_code, 201, resposta.data)
-        self.assertEqual(resposta.data["situacao"], "CONFERIR")
+        self.assertEqual(resposta.data["situacao"], "OK")
         self.assertEqual(resposta.data["valor"], "50.00")
         comprovante = Comprovante.objects.get()
         self.assertEqual(comprovante.origem, "SITE")

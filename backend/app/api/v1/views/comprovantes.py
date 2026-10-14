@@ -207,7 +207,7 @@ class ComprovanteViewSet(
 
     @action(detail=False, methods=["post"])
     def enviar(self, request):
-        """Um arquivo pelo site: lido na hora e devolvido para a pessoa conferir."""
+        """Um arquivo pelo site: lido na hora; com valor e data lidos ja fica OK."""
         conta = get_conta_do_usuario(request.user)
         if conta is None:
             return Response({"error": "Este usuario nao esta vinculado a uma empresa."}, status=403)
