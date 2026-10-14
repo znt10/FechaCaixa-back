@@ -30,6 +30,9 @@ class ResultadoDaImportacao:
     repetidas: int
     pareadas: int
     classificadas: int
+    # Entradas que viraram venda sozinhas: contadas a parte, porque
+    # "classificadas" e o que a gerente ja tinha respondido.
+    vendas: int = 0
 
 
 def chaves_das_linhas(linhas):
@@ -159,7 +162,7 @@ def importar_extrato(conta_bancaria, nome_do_arquivo, conteudo, usuario=None):
     ]
     TransacaoBancaria.objects.bulk_create(novas)
 
-    pareadas = classificadas = 0
+    pareadas = classificadas = vendas = 0
     if novas:
         datas = [transacao.data for transacao in novas]
         # Antes do pareamento: ele cria a categoria de entre lojas, e com uma
@@ -172,7 +175,7 @@ def importar_extrato(conta_bancaria, nome_do_arquivo, conteudo, usuario=None):
         transacoes = list(TransacaoBancaria.objects.filter(importacao=importacao))
         classificadas = aplicar_regras(conta, transacoes)
         # Por ultimo: so o que o pareamento e as regras nao explicaram.
-        classificadas += marcar_entradas_como_venda(conta, transacoes)
+        vendas = marcar_entradas_como_venda(conta, transacoes)
 
     importacao.novas = len(novas)
     importacao.repetidas = len(extrato.linhas) - len(novas)
@@ -184,4 +187,5 @@ def importar_extrato(conta_bancaria, nome_do_arquivo, conteudo, usuario=None):
         repetidas=importacao.repetidas,
         pareadas=pareadas,
         classificadas=classificadas,
+        vendas=vendas,
     )

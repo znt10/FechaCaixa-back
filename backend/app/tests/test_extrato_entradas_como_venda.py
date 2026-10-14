@@ -39,6 +39,12 @@ class EntradasComoVendaTests(TestCase):
         self.assertEqual((entrada.tipo, entrada.categoria, entrada.automatica), (RECEBIMENTO, self.vendas, True))
         self.assertIsNone(saida.tipo)
 
+    def test_importacao_conta_as_vendas_separado_das_regras(self):
+        """ "Classificadas" e o que a gerente ja tinha respondido; a venda
+        automatica e outra frase na tela."""
+        resultado = self.importar(("20261001", "35.00", "PIX RECEBIDO MARIA"))
+        self.assertEqual((resultado.classificadas, resultado.vendas), (0, 1))
+
     def test_regra_aprendida_vence_a_venda(self):
         self.importar(("20261001", "500.00", "DEPOSITO DINHEIRO LOTERICA"))
         classificar(TransacaoBancaria.objects.get(), RECEBIMENTO, categoria=self.deposito)

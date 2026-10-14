@@ -374,6 +374,7 @@ class TransacaoBancariaViewSet(
                 "repetidas": resultado.repetidas,
                 "pareadas": resultado.pareadas,
                 "classificadas": resultado.classificadas,
+                "vendas": resultado.vendas,
                 "periodo_de": importacao.periodo_de,
                 "periodo_ate": importacao.periodo_ate,
             })
