@@ -70,13 +70,10 @@ class FechamentoCaixaPublicoTests(APITestCase):
         self.assertEqual(str(resp.data["total"]), "4812.50")
         self.assertEqual(FechamentoCaixa.objects.count(), 1)
 
-    def test_retirada_e_despesa_voltam_para_o_total(self):
-        """O numero que a gerencia le e quanto a loja movimentou.
-
-        `dinheiro` e o que sobrou na gaveta: a retirada e a despesa ja sairam
-        dali. Voltam somando porque o dinheiro saiu DEPOIS da venda — e a
-        venda valeu. Ate 2026-09-01 esta conta subtraia as duas, descontando o
-        turno duas vezes.
+    def test_retirada_volta_para_o_total_e_despesa_nao(self):
+        """`dinheiro` e o que sobrou na gaveta: a retirada e a despesa ja sairam
+        dali. A retirada volta somando — o dono levou para guardar, o dinheiro
+        existe. A despesa foi gasta e fica so anotada em `registrado`.
         """
         resp = self.client.post(
             "/api/v1/fechamentos-caixa/",
@@ -90,8 +87,8 @@ class FechamentoCaixaPublicoTests(APITestCase):
         )
 
         self.assertEqual(resp.status_code, 201, resp.data)
-        # 4812.50 recebido + 300 de retirada + 120 de despesa.
-        self.assertEqual(str(resp.data["total"]), "5232.50")
+        # 4812.50 recebido + 300 de retirada; os 120 de despesa ficam fora.
+        self.assertEqual(str(resp.data["total"]), "5112.50")
         self.assertEqual(str(resp.data["registrado"]), "420.00")
 
     def test_link_de_pagamento_entra_no_total(self):

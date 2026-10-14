@@ -12,10 +12,10 @@ grande na mao de quem esta no balcao.
 
 A regra que este arquivo protege:
 
-    Volta para o total tudo que saiu da gaveta SEM cancelar uma venda.
+    Volta para o total o dinheiro que saiu da gaveta e continua existindo.
 
-    retirada  -> soma    (foi guardar; a venda valeu)
-    despesa   -> soma    (o dinheiro sumiu, mas a venda valeu)
+    retirada  -> soma    (foi guardar; o dinheiro e da empresa)
+    despesa   -> fora    (foi gasta; fica so anotada, para a loja avisar)
     devolucao -> neutra  (saiu da gaveta E cancelou a venda; se anulam)
     consumo   -> neutro  (nenhum dinheiro se moveu)
 
@@ -112,11 +112,17 @@ class RetiradaSomaTests(BaseDaConta):
         self.assertEqual(fechamento.registrado, Decimal("500.00"))
 
 
-class DespesaSomaTests(BaseDaConta):
-    def test_a_despesa_volta_para_o_total(self):
+class DespesaForaDoTotalTests(BaseDaConta):
+    def test_a_despesa_nao_entra_no_total(self):
+        """Foi gasta: somar faria o caixa mostrar dinheiro que a loja nao tem.
+
+        Ate 2026-10-14 ela somava. Fica anotada em `registrado`, para avisar.
+        """
         self.lancar(despesas=[{"descricao": "Gas", "valor": "60.00"}])
 
-        self.assertEqual(FechamentoCaixa.objects.get().total, Decimal("410.00"))
+        fechamento = FechamentoCaixa.objects.get()
+        self.assertEqual(fechamento.total, Decimal("350.00"))
+        self.assertEqual(fechamento.registrado, Decimal("60.00"))
 
     def test_varias_despesas_no_mesmo_turno(self):
         """O turno gasta com gas, agua e remedio, e sao tres linhas.
@@ -134,7 +140,7 @@ class DespesaSomaTests(BaseDaConta):
         fechamento = FechamentoCaixa.objects.get()
         self.assertEqual(fechamento.despesas.count(), 3)
         self.assertEqual(fechamento.total_das_despesas, Decimal("112.50"))
-        self.assertEqual(fechamento.total, Decimal("462.50"))
+        self.assertEqual(fechamento.total, Decimal("350.00"))
 
     def test_turno_sem_despesa_nao_grava_nada(self):
         self.lancar()
@@ -169,9 +175,10 @@ class OTurnoInteiroTests(BaseDaConta):
     def test_o_exemplo_do_dono(self):
         """Gaveta 350, retirada 500, gas 60 + agua 40, devolucao 50.
 
-        A loja movimentou 950: os 350 que sobraram, mais os 500 que o Juselino
-        levou, mais os 100 que sairam para pagar gas e agua. A devolucao de 50
-        nao entra — ela ja tinha derrubado a gaveta antes da contagem.
+        O caixa fecha em 850: os 350 que sobraram mais os 500 que o Juselino
+        levou. Os 100 de gas e agua foram gastos e ficam so anotados. A
+        devolucao de 50 nao entra — ela ja tinha derrubado a gaveta antes da
+        contagem.
         """
         resp = self.lancar(
             **self.retirada("500.00"),
@@ -184,9 +191,9 @@ class OTurnoInteiroTests(BaseDaConta):
         )
 
         fechamento = FechamentoCaixa.objects.get()
-        self.assertEqual(fechamento.total, Decimal("950.00"))
+        self.assertEqual(fechamento.total, Decimal("850.00"))
         self.assertEqual(fechamento.registrado, Decimal("650.00"))
-        self.assertEqual(str(resp.data["total"]), "950.00")
+        self.assertEqual(str(resp.data["total"]), "850.00")
         self.assertEqual(str(resp.data["registrado"]), "650.00")
 
 

@@ -21,9 +21,9 @@ As abas se chamam pelo tipo do lancamento — Entradas, Saidas, Consumo,
 Desperdicio — e nao pela tela de onde vieram: e assim que a empresa fala do
 dinheiro.
 
-"Saidas" e o nome do evento, nao do efeito na conta: retirada e despesa saem da
-gaveta e VOLTAM para o total (ver FechamentoCaixa.total). So a devolucao nao
-volta. O desperdicio nao entra em Saidas: ninguem pagou nada, entao nenhum
+"Saidas" e o nome do evento, nao do efeito na conta: retirada sai da gaveta e
+VOLTA para o total (ver FechamentoCaixa.total). Despesa e devolucao nao voltam:
+a despesa foi gasta, a devolucao desfez a venda. O desperdicio nao entra em Saidas: ninguem pagou nada, entao nenhum
 dinheiro saiu da gaveta — somar a aba Saidas continua batendo com as colunas
 de retirada, despesa e devolucao da aba Entradas.
 """
@@ -246,15 +246,15 @@ class PlanilhaDoPeriodoView(APIView):
     def _entradas(self, planilha, fechamentos):
         """Um turno de uma loja por linha: a conta fechando na horizontal.
 
-        A ordem das colunas e a da conta, e nao a da tela: as seis parcelas
-        primeiro (PIX, cartao, dinheiro, link, retirada, despesa) e o Total
-        logo depois delas. Assim quem arrasta a soma pela linha chega no mesmo
-        numero que a coluna Total ja traz — que e como a dona confere.
+        A ordem das colunas e a da conta, e nao a da tela: as cinco parcelas
+        primeiro (PIX, cartao, dinheiro, link, retirada) e o Total logo depois
+        delas. Assim quem arrasta a soma pela linha chega no mesmo numero que a
+        coluna Total ja traz — que e como a dona confere.
 
-        Retirada e despesa SOMAM: `dinheiro` e o que sobrou na gaveta, e as
-        duas sairam dali depois da venda. A devolucao fica na ponta, depois do
-        Total, justamente por nao entrar nele — ela cancelou a venda junto, e
-        ja se descontou sozinha no dinheiro contado.
+        A retirada SOMA: `dinheiro` e o que sobrou na gaveta, e o dono so levou
+        para guardar. Despesa e devolucao ficam depois do Total, justamente por
+        nao entrarem nele — a despesa foi gasta (fica anotada para a loja
+        avisar) e a devolucao cancelou a venda junto.
 
         Nao ha mais "Total liquido": com nada subtraindo, ele repetia o Total.
         """
@@ -264,7 +264,7 @@ class PlanilhaDoPeriodoView(APIView):
             [
                 ("Data", 12), ("Loja", 22), ("Turno", 10), ("Quem lançou", 24),
                 ("PIX", 12), ("Cartão", 12), ("Dinheiro", 12), ("Link", 12),
-                ("Retirada", 12), ("Despesa", 12), ("Total", 13),
+                ("Retirada", 12), ("Total", 13), ("Despesa", 12),
                 ("Devolução", 12), ("Conferido", 11),
             ],
         )
@@ -277,8 +277,8 @@ class PlanilhaDoPeriodoView(APIView):
                 _numero(f.pix), _numero(f.cartao), _numero(f.dinheiro),
                 _numero(f.link_pagamento),
                 _numero(f.valor_retirado) if f.houve_retirada else 0,
-                _numero(f.total_das_despesas),
                 _numero(f.total),
+                _numero(f.total_das_despesas),
                 _numero(f.devolucao_valor) if f.houve_devolucao else 0,
                 "sim" if f.conferido else "não",
             ])
@@ -299,8 +299,8 @@ class PlanilhaDoPeriodoView(APIView):
         hora, entao ele nao saiu do caixa. Somar esta aba tem que dar o mesmo
         que as colunas de retirada, despesa e devolucao da aba Entradas.
 
-        "Saiu da gaveta" nao quer dizer "saiu do total": retirada e despesa
-        voltam para o total na aba Entradas, e so a devolucao nao volta. Esta
+        "Saiu da gaveta" nao quer dizer "saiu do total": a retirada volta para
+        o total na aba Entradas; despesa e devolucao nao voltam. Esta
         aba responde para onde o dinheiro foi, nao quanto a loja vendeu.
         """
         folha = _aba(

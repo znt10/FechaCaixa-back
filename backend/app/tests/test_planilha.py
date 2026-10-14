@@ -94,12 +94,12 @@ class PlanilhaDoPeriodoTests(APITestCase):
         linha = self.linhas(planilha["Entradas"])[0]
         self.assertEqual(linha[1], "Loja Centro")
         self.assertEqual(linha[2], "Tarde")
-        # As seis parcelas, e o Total logo depois delas: quem arrastar a soma
+        # As cinco parcelas, e o Total logo depois delas: quem arrastar a soma
         # pela linha tem que chegar no mesmo numero da coluna Total.
         self.assertEqual(linha[8], 10.0)   # retirada
-        self.assertEqual(linha[9], 20.0)   # despesa
-        self.assertEqual(linha[10], 210.0)  # total: 180 recebido + 10 + 20
-        self.assertEqual(sum(linha[4:10]), linha[10])
+        self.assertEqual(linha[9], 190.0)  # total: 180 recebido + 10
+        self.assertEqual(sum(linha[4:9]), linha[9])
+        self.assertEqual(linha[10], 20.0)  # despesa: anotada, fora do total
         self.assertEqual(linha[11], 0)     # devolucao: nao houve
 
     def test_as_entradas_fecham_um_subtotal_por_loja(self):
@@ -121,9 +121,9 @@ class PlanilhaDoPeriodoTests(APITestCase):
             [linha[3] for linha in linhas],
             ["Ana", "Total Loja Centro", "Ana", "Total Loja Sul", "TOTAL"],
         )
-        # Coluna 11 e o total do turno — ela veio para depois das parcelas.
+        # Coluna 10 e o total do turno — ela veio para depois das parcelas.
         self.assertEqual(
-            [linha[10] for linha in linhas], [210.0, 210.0, 10.0, 10.0, 220.0]
+            [linha[9] for linha in linhas], [190.0, 190.0, 10.0, 10.0, 200.0]
         )
 
     def test_o_turno_do_feriado_sai_como_feriado(self):
@@ -202,7 +202,7 @@ class PlanilhaDoPeriodoTests(APITestCase):
         despesas = [linha[4] for linha in saidas if linha[3] == "Despesa"]
         self.assertEqual(despesas, ["Gás", "Remédio", "Água"])
         # E a coluna da aba Entradas traz a soma das tres.
-        self.assertEqual(self.linhas(planilha["Entradas"])[0][9], 40.0)
+        self.assertEqual(self.linhas(planilha["Entradas"])[0][10], 40.0)
 
     def test_a_devolucao_aparece_mas_nao_entra_no_total(self):
         """Ela saiu da gaveta, entao esta na aba Saidas. Mas cancelou a venda
@@ -215,7 +215,7 @@ class PlanilhaDoPeriodoTests(APITestCase):
 
         entrada = self.linhas(planilha["Entradas"])[0]
         self.assertEqual(entrada[11], 50.0)   # coluna propria, depois do Total
-        self.assertEqual(entrada[10], 210.0)  # o Total nao mudou
+        self.assertEqual(entrada[9], 190.0)   # o Total nao mudou
 
         saidas = self.linhas(planilha["Saídas"])
         self.assertIn("Devolução", [linha[3] for linha in saidas])
