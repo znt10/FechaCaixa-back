@@ -107,6 +107,25 @@ def get_user_group_name(user):
     return group.name if group else None
 
 
+PAPEL_DA_PLATAFORMA = "Plataforma"
+
+
+def papel_na_tela(user):
+    """O cargo que a tela usa para decidir menu e rotas.
+
+    Igual a get_user_group_name, menos para o superusuario: ele e o dono do
+    FechaCaixa, e nao o Admin de uma empresa. Nao fecha caixa nem ve despesa —
+    so administra as empresas na tela Plataforma. Com o cargo "Admin" ele caia
+    no painel de caixa de todas as empresas, que nao e trabalho dele.
+
+    Fica fora de get_user_group_name de proposito: quem decide permissao no
+    backend continua olhando is_superuser e os grupos, e nao este nome.
+    """
+    if user.is_superuser:
+        return PAPEL_DA_PLATAFORMA
+    return get_user_group_name(user)
+
+
 class IsGerenteOrAdministrador(BasePermission):
     """Rotas exclusivas da gerencia (ex: relatorio global de pedidos)."""
 
@@ -176,12 +195,20 @@ class TemAcessoAoFormulario(BasePermission):
     message = "Digite o codigo da empresa para lancar o caixa."
 
     def has_permission(self, request, view):
+        from app.excecoes import EmpresaDesativada
         from app.models import DispositivoDoFormulario
 
         token = request.COOKIES.get("formulario_token")
-        dispositivo = DispositivoDoFormulario.objects.ativo_por_token(token)
+        dispositivo = DispositivoDoFormulario.objects.ativo_por_token(
+            token, com_conta_inativa=True
+        )
         if dispositivo is None:
             return False
+        # O aparelho ja provou o acesso: dizer que a empresa foi desativada
+        # nao entrega nada a quem chuta codigo, e poupa a loja de uma tela de
+        # codigo que nao abre mais.
+        if not dispositivo.conta.ativo:
+            raise EmpresaDesativada()
 
         dispositivo.registrar_uso()
         request.dispositivo_do_formulario = dispositivo
@@ -289,3 +316,14 @@ class UsaOPlanoDeContas(BasePermission):
         return (
             conta.modulo_banco_ativo or conta.modulo_comprovantes_ativo
         ) and is_gerente_ou_admin(user)
+
+
+class IsSuperuser(BasePermission):
+    """So o dono da plataforma. O grupo "Admin" existe dentro das empresas e
+    nao basta: a tela Plataforma mostra e muda todas elas."""
+
+    message = "Só o dono da plataforma acessa esta tela."
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated and user.is_superuser)
