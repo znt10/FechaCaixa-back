@@ -18,6 +18,7 @@ from app.models import ImportacaoDeExtrato, TransacaoBancaria
 
 from .classificar import aplicar_regras, parear_transferencias
 from .linhas import RecusaDeExtrato, assinatura_da_descricao, normalizar_descricao
+from .csv_picpay import e_csv_do_picpay, ler_csv_picpay
 from .ofx import decodificar, ler_ofx
 
 
@@ -88,16 +89,17 @@ def conferir_a_conta(conta_bancaria, conta_no_arquivo):
 def ler_arquivo(nome_do_arquivo, conteudo):
     """O ExtratoLido, escolhendo o leitor pelo conteudo e nao so pelo nome.
 
-    Por enquanto so OFX. O CSV do PicPay entra aqui quando houver um arquivo
-    de exemplo para o leitor ser escrito contra ele.
+    OFX de qualquer banco, e o CSV do PicPay, que nao exporta OFX.
     """
     comeco = conteudo[:4096]
     if isinstance(comeco, bytes):
         comeco = comeco.decode("latin-1")
+    if e_csv_do_picpay(comeco):
+        return ler_csv_picpay(conteudo)
     if "OFX" in comeco.upper() or nome_do_arquivo.lower().endswith(".ofx"):
         return ler_ofx(conteudo)
     raise RecusaDeExtrato(
-        "Por enquanto o sistema lê extratos em OFX. No internet banking, "
+        "O sistema lê extratos em OFX e o CSV do PicPay. No internet banking, "
         "exporte o extrato escolhendo o formato OFX."
     )
 
