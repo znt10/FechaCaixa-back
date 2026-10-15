@@ -6,13 +6,14 @@ garantias que o modelo nao tem como dar sozinho: Pagamento anda so com
 uma transferencia entre lojas ficam presas uma a outra.
 """
 
+import re
 from collections import defaultdict
 from datetime import timedelta
 
 from django.db import transaction
 from django.db.models import Q
 
-from app.models import RegraDeClassificacao, TipoDeMovimento, TransacaoBancaria
+from app.models import ContaBancaria, RegraDeClassificacao, TipoDeMovimento, TransacaoBancaria
 
 from .categorias import categoria_de_vendas, categoria_entre_lojas
 from .linhas import normalizar_descricao
@@ -20,6 +21,14 @@ from .linhas import normalizar_descricao
 # Pix cai na hora e TED no mesmo dia, mas o extrato de um banco pode datar a
 # saida no dia em que foi agendada e o outro a entrada no dia seguinte.
 JANELA_DO_PAR = timedelta(days=1)
+
+# Numero de conta curto demais acharia "conta" dentro de qualquer CPF ou
+# valor da descricao. Seis digitos ja e mais que qualquer pedaco de data.
+MENOR_NUMERO_DE_CONTA = 6
+
+# Um numero na descricao, com os separadores que os bancos poem no meio:
+# "106539100-5", "13.004.982-5".
+_NUMERO = re.compile(r"\d[\d.\-/]*\d|\d")
 
 
 class ClassificacaoInvalida(Exception):
@@ -59,6 +68,105 @@ def _pontas_compativeis(saida, entrada):
     )
 
 
+def _digitos(texto):
+    return "".join(c for c in (texto or "") if c.isdigit()).lstrip("0")
+
+
+def _contas_da_empresa(conta):
+    """O numero de cada conta bancaria da empresa, so digitos."""
+    return [
+        (conta_bancaria.id, digitos)
+        for conta_bancaria in ContaBancaria.objects.filter(loja__conta=conta)
+        if len(digitos := _digitos(conta_bancaria.numero)) >= MENOR_NUMERO_DE_CONTA
+    ]
+
+
+def _conta_citada(transacao, contas):
+    """A outra conta da empresa que a descricao cita, ou None.
+
+    O Nubank escreve o destino do Pix na descricao — "Jose ... - PICPAY (0380)
+    Agencia: 1 Conta: 106539100-5" —, e quando esse numero e de uma conta
+    cadastrada da empresa, nao ha duvida: e transferencia entre lojas, mesmo
+    que o valor se repita no dia.
+    """
+    numeros = [_digitos(numero) for numero in _NUMERO.findall(transacao.descricao or "")]
+    for conta_id, digitos in contas:
+        if conta_id == transacao.conta_bancaria_id:
+            continue
+        if any(digitos in numero for numero in numeros):
+            return conta_id
+    return None
+
+
+def _ligar(saida, entrada, categoria):
+    with transaction.atomic():
+        for ponta, outra in ((saida, entrada), (entrada, saida)):
+            ponta.tipo = TipoDeMovimento.TRANSFERENCIA
+            ponta.categoria = categoria
+            ponta.elemento = None
+            ponta.par = outra
+            ponta.automatica = False
+        campos = ["tipo", "categoria", "elemento", "par", "automatica"]
+        saida.save(update_fields=campos)
+        entrada.save(update_fields=campos)
+
+
+def _parear_pela_conta_citada(conta, candidatas, categoria):
+    """As transferencias que a descricao confirma, antes de olhar o valor.
+
+    Quando a descricao cita outra conta cadastrada, a outra ponta e a entrada
+    (ou saida) de mesmo valor NAQUELA conta, ate um dia de distancia. Se ha
+    mais de uma, qualquer escolha da o mesmo resultado — todas sao entre as
+    mesmas duas contas —, entao fica a de data mais perto.
+
+    Sem a outra ponta (o extrato dela ainda nao subiu), a transacao ja vira
+    entre lojas sozinha; o par fecha quando o outro extrato chegar, porque
+    entre lojas sem par continua candidata.
+
+    Devolve os pares feitos e as transacoes usadas.
+    """
+    contas = _contas_da_empresa(conta)
+    if not contas:
+        return 0, set()
+
+    usadas = set()
+    pares = 0
+    for transacao in candidatas:
+        if transacao.pk in usadas:
+            continue
+        outra_conta = _conta_citada(transacao, contas)
+        if outra_conta is None:
+            continue
+
+        opostas = [
+            outra
+            for outra in candidatas
+            if outra.pk not in usadas
+            and outra.conta_bancaria_id == outra_conta
+            and outra.valor == -transacao.valor
+            and abs(outra.data - transacao.data) <= JANELA_DO_PAR
+        ]
+        if opostas:
+            outra = min(opostas, key=lambda o: (abs(o.data - transacao.data), o.data, o.id))
+            saida, entrada = (transacao, outra) if transacao.valor < 0 else (outra, transacao)
+            _ligar(saida, entrada, categoria)
+            usadas.update({transacao.pk, outra.pk})
+            pares += 1
+            continue
+
+        # Fora do pareamento por valor tambem: a descricao ja disse qual e a
+        # outra conta, e casar com uma terceira so pelo valor seria errado.
+        usadas.add(transacao.pk)
+        if transacao.categoria_id != categoria.id:
+            transacao.tipo = TipoDeMovimento.TRANSFERENCIA
+            transacao.categoria = categoria
+            transacao.elemento = None
+            transacao.automatica = False
+            transacao.save(update_fields=["tipo", "categoria", "elemento", "automatica"])
+
+    return pares, usadas
+
+
 def parear_transferencias(conta, de, ate):
     """Acha as duas pontas das transferencias entre contas da empresa.
 
@@ -71,17 +179,21 @@ def parear_transferencias(conta, de, ate):
     transferencia e uma venda de 500; escolher uma seria chutar, e a venda
     sumiria do consolidado. Na duvida, as duas ficam para a gerente.
 
+    Antes disso, o que a descricao confirma: ver `_parear_pela_conta_citada`.
+
     Devolve quantos pares foram feitos.
     """
+    categoria = categoria_entre_lojas(conta)
     candidatas = _candidatas_a_par(conta, de, ate)
+    pares, usadas = _parear_pela_conta_citada(conta, candidatas, categoria)
+    candidatas = [t for t in candidatas if t.pk not in usadas]
+
     saidas = [t for t in candidatas if t.valor < 0]
     entradas_por_valor = defaultdict(list)
     for transacao in candidatas:
         if transacao.valor > 0:
             entradas_por_valor[transacao.valor].append(transacao)
 
-    categoria = None
-    pares = 0
     for saida in saidas:
         entradas = [
             e for e in entradas_por_valor[-saida.valor] if _pontas_compativeis(saida, e)
@@ -93,17 +205,7 @@ def parear_transferencias(conta, de, ate):
         if len(saidas_da_entrada) != 1:
             continue
 
-        categoria = categoria or categoria_entre_lojas(conta)
-        with transaction.atomic():
-            for ponta, outra in ((saida, entrada), (entrada, saida)):
-                ponta.tipo = TipoDeMovimento.TRANSFERENCIA
-                ponta.categoria = categoria
-                ponta.elemento = None
-                ponta.par = outra
-                ponta.automatica = False
-            campos = ["tipo", "categoria", "elemento", "par", "automatica"]
-            saida.save(update_fields=campos)
-            entrada.save(update_fields=campos)
+        _ligar(saida, entrada, categoria)
         entradas_por_valor[entrada.valor].remove(entrada)
         pares += 1
 
