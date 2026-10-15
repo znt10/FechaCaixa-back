@@ -13,7 +13,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.settings import api_settings
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
 
@@ -57,8 +57,37 @@ class CookieTokenRefreshView(TokenRefreshView):
                 path="/",
                 max_age=int(api_settings.ACCESS_TOKEN_LIFETIME.total_seconds()),
             )
+            self._regravar_papel(response, access_token)
 
         return response
+
+    def _regravar_papel(self, response, access_token):
+        """O papel de agora, e nao o do dia do login.
+
+        O cookie `role` e o que o middleware do front usa para abrir ou barrar
+        cada tela, e so o login o gravava. Quem entrou antes de o superusuario
+        ganhar o papel "Plataforma" ficou com "Admin" por ate sete dias: via a
+        aba Plataforma no menu e era devolvido ao /fechamentos ao clicar. O
+        mesmo valia para quem mudou de cargo. Regravado aqui, ele se corrige
+        na proxima renovacao, em no maximo uma hora.
+
+        Sem cargo nenhum, o cookie fica como estava: quem barra de verdade e a
+        API, e apagar aqui derrubaria a sessao no meio de uma tela.
+        """
+        user_id = AccessToken(access_token).payload.get(api_settings.USER_ID_CLAIM)
+        user = User.objects.filter(**{api_settings.USER_ID_FIELD: user_id}).first()
+        papel = papel_na_tela(user) if user else None
+        if papel is None:
+            return
+        response.set_cookie(
+            key="role",
+            value=papel,
+            httponly=True,
+            secure=not settings.DEBUG,
+            samesite="Lax",
+            path="/",
+            max_age=int(api_settings.REFRESH_TOKEN_LIFETIME.total_seconds()),
+        )
 
 
 class LoginView(APIView):
