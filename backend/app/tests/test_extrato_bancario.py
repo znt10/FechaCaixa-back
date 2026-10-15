@@ -311,6 +311,70 @@ class PareamentoEntreLojasTests(TestCase):
 
         self.assertFalse(TransacaoBancaria.objects.filter(par__isnull=False).exists())
 
+    # Pix do Nubank: a descricao traz a conta de destino.
+    PIX_PARA_B = "Transferência enviada pelo Pix - Fulano - INTER (0077) Agência: 1 Conta: 22222-2"
+    PIX_PARA_FORA = "Transferência enviada pelo Pix - Verlandia - NU PAGAMENTOS Agência: 1 Conta: 590986547-4"
+
+    def test_conta_citada_pareia_mesmo_com_valor_repetido(self):
+        """Dois Pix de 100 em dias seguidos para a conta da Loja B: por valor
+        seria duvida, mas a descricao diz para onde foram."""
+        self.importar_a(
+            ("20260919", "-100.00", self.PIX_PARA_B),
+            ("20260920", "-100.00", self.PIX_PARA_B),
+        )
+        self.importar_b(("20260919", "100.00", "PIX RECEBIDO"), ("20260920", "100.00", "PIX RECEBIDO"))
+
+        for saida in TransacaoBancaria.objects.filter(conta_bancaria=self.banco_a):
+            self.assertPareadas(saida, saida.par)
+            self.assertEqual(saida.par.data, saida.data)
+
+    def test_conta_citada_desempata_com_um_pix_para_fora(self):
+        """10 para a Loja B e 10 para a Verlandia no mesmo dia, uma entrada de
+        10 na B: so o da B e a outra ponta."""
+        self.importar_a(
+            ("20260919", "-10.00", self.PIX_PARA_B),
+            ("20260919", "-10.00", self.PIX_PARA_FORA),
+        )
+        self.importar_b(("20260919", "10.00", "PIX RECEBIDO"))
+
+        para_b = TransacaoBancaria.objects.get(descricao=self.PIX_PARA_B)
+        para_fora = TransacaoBancaria.objects.get(descricao=self.PIX_PARA_FORA)
+        self.assertPareadas(para_b, para_b.par)
+        self.assertIsNone(para_fora.par_id)
+        self.assertIsNone(para_fora.tipo)
+
+    def test_conta_citada_sem_a_outra_ponta_ja_e_entre_lojas(self):
+        """O extrato da B ainda nao subiu: a saida ja e entre lojas, e o par
+        fecha quando ele chegar."""
+        self.importar_a(("20261002", "-500.00", self.PIX_PARA_B))
+        saida = TransacaoBancaria.objects.get()
+        self.assertEqual(saida.tipo, TRANSFERENCIA)
+        self.assertTrue(saida.categoria.entre_lojas)
+        self.assertIsNone(saida.par_id)
+
+        self.importar_b(("20261002", "500.00", "PIX RECEBIDO"))
+        self.assertPareadas(*self.pontas())
+
+    def test_conta_citada_de_outra_empresa_nao_conta(self):
+        vizinha = Conta.objects.create(nome="Vizinha")
+        loja_c = criar_loja(conta=vizinha, nome_loja="Loja C", cidade="X", endereco="Y")
+        criar_conta_bancaria(loja_c, numero="590986547-4")
+
+        self.importar_a(("20261002", "-10.00", self.PIX_PARA_FORA))
+
+        self.assertIsNone(TransacaoBancaria.objects.get().tipo)
+
+    def test_conta_citada_nao_casa_com_uma_terceira_conta_so_pelo_valor(self):
+        """Cita a B, mas a unica entrada de 500 e numa terceira conta: nao e
+        ela a outra ponta."""
+        loja_c = criar_loja(nome_loja="Loja C", cidade="X", endereco="Y")
+        banco_c = criar_conta_bancaria(loja_c, numero="33333-3")
+        self.importar_a(("20261002", "-500.00", self.PIX_PARA_B))
+        importar_extrato(banco_c, "c.ofx", ofx([("20261002", "500.00", "PIX")], conta="33333-3"))
+
+        entrada_c = TransacaoBancaria.objects.get(conta_bancaria=banco_c)
+        self.assertIsNone(entrada_c.par_id)
+
     def test_pareia_a_ponta_que_uma_regra_ja_marcou_como_entre_lojas(self):
         """A regra classifica a saida de A antes do extrato de B chegar; a
         entrada de B ainda precisa achar o par dela."""
