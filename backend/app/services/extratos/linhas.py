@@ -27,6 +27,11 @@ class LinhaDoExtrato:
     valor: Decimal
     descricao: str
     id_do_banco: str = ""
+    # So a API do banco preenche: o id da transacao e quem esta do outro lado.
+    id_externo: str = ""
+    contraparte_nome: str = ""
+    contraparte_documento: str = ""
+    contraparte_conta: str = ""
 
 
 @dataclass

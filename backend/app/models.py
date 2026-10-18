@@ -1027,6 +1027,58 @@ class Desperdicio(BaseModel):
         return f"{self.salgado.nome} x{self.quantidade} - {self.fechamento.data}"
 
 
+class ConexaoPluggy(BaseModel):
+    """A ligacao de um titular (empresa) com o Meu Pluggy.
+
+    O Client Secret nunca fica em claro: so a versao cifrada (Fernet) e
+    gravada, e nenhuma resposta, tela ou admin a devolve.
+    """
+
+    class Estado(models.TextChoices):
+        CONFIGURANDO = "CONFIGURANDO", "Configurando"
+        ATIVA = "ATIVA", "Ativa"
+        COM_ERRO = "COM_ERRO", "Com erro"
+        DESLIGADA = "DESLIGADA", "Desligada"
+
+    conta = models.ForeignKey(
+        Conta, on_delete=models.CASCADE, related_name="conexoes_pluggy"
+    )
+    email = models.EmailField()
+    client_id = models.CharField(max_length=64, blank=True)
+    client_secret_cifrado = models.TextField(blank=True)
+    segredo_salvo_em = models.DateTimeField(null=True, blank=True)
+    # Ids dos itens (bancos conectados) separados por virgula.
+    item_ids = models.TextField(blank=True)
+    estado = models.CharField(
+        max_length=15, choices=Estado.choices, default=Estado.CONFIGURANDO
+    )
+    conectada_em = models.DateTimeField(null=True, blank=True)
+    ultima_busca_ok_em = models.DateTimeField(null=True, blank=True)
+    ultimo_erro = models.CharField(max_length=255, blank=True)
+    falhas_seguidas = models.PositiveSmallIntegerField(default=0)
+    # {item_id: {"status": str, "atualizado_em": iso}}
+    itens = models.JSONField(default=dict, blank=True)
+
+    def __str__(self):
+        return f"Pluggy de {self.conta} ({self.get_estado_display()})"
+
+    def lista_de_itens(self):
+        """Os ids sem espacos, vazios e repetidos, na ordem em que vieram."""
+        vistos = []
+        for item in (self.item_ids or "").split(","):
+            item = item.strip()
+            if item and item not in vistos:
+                vistos.append(item)
+        return vistos
+
+    def guardar_segredo(self, texto):
+        """Cifra o Client Secret e marca quando foi salvo. Nao chama save()."""
+        from app.services.pluggy.cifra import cifrar
+
+        self.client_secret_cifrado = cifrar(texto)
+        self.segredo_salvo_em = timezone.now()
+
+
 class ContaBancaria(BaseModel):
     """Uma conta de banco de uma loja: o Santander da loja do centro, o Inter
     da de Pirituba.
@@ -1062,6 +1114,19 @@ class ContaBancaria(BaseModel):
     numero = models.CharField(max_length=20)
     apelido = models.CharField(max_length=60, blank=True)
     ativo = models.BooleanField(default=True)
+    # De onde vem o extrato quando nao e por arquivo. NULL (e nao vazio) em
+    # pluggy_account_id para a unicidade valer so entre as preenchidas: no
+    # MySQL, NULL nao colide.
+    conexao_pluggy = models.ForeignKey(
+        "ConexaoPluggy",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contas_bancarias",
+    )
+    pluggy_account_id = models.CharField(
+        max_length=64, null=True, blank=True, unique=True
+    )
 
     class Meta:
         ordering = ["loja__nome_loja", "banco", "numero"]
@@ -1220,6 +1285,17 @@ class TransacaoBancaria(BaseModel):
     # UPDATE so. Ver `assinatura_da_descricao`.
     assinatura = models.CharField(max_length=255, blank=True)
 
+    # Origem da API (Pluggy). NULL e nao vazio: NULL nao colide na unicidade,
+    # entao as linhas de OFX (sem id) convivem; MySQL e sqlite agem igual.
+    id_externo = models.CharField(max_length=64, null=True, blank=True)
+    # A linha de API que ja existia por arquivo guarda aqui a chave do OFX,
+    # para o arquivo subido depois nao duplicar.
+    chave_do_arquivo = models.CharField(max_length=80, null=True, blank=True)
+    # Quem esta do outro lado, como a API informa. Documento e conta so digitos.
+    contraparte_nome = models.CharField(max_length=150, blank=True)
+    contraparte_documento = models.CharField(max_length=20, blank=True)
+    contraparte_conta = models.CharField(max_length=30, blank=True)
+
     tipo = models.CharField(
         max_length=15, choices=TipoDeMovimento.choices, null=True, blank=True
     )
@@ -1256,7 +1332,15 @@ class TransacaoBancaria(BaseModel):
             models.UniqueConstraint(
                 fields=["conta_bancaria", "chave"],
                 name="transacao_unica_por_conta_bancaria",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["conta_bancaria", "id_externo"],
+                name="transacao_id_externo_unico",
+            ),
+            models.UniqueConstraint(
+                fields=["conta_bancaria", "chave_do_arquivo"],
+                name="transacao_chave_do_arquivo_unica",
+            ),
         ]
         indexes = [
             models.Index(fields=["conta", "data"]),
