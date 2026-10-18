@@ -6,6 +6,7 @@ Nada daqui devolve o Client Secret, nem cifrado.
 
 import re
 
+from cryptography.fernet import InvalidToken
 
 from app.models import ConexaoPluggy, ContaBancaria
 

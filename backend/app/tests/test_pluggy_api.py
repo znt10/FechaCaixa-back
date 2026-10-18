@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 
 from app.models import ConexaoPluggy, Conta, ContaBancaria, Loja
 from app.services.pluggy.cifra import cifra_configurada
+from app.services.pluggy.cliente import FalhaDaPluggy
 from cryptography.fernet import Fernet
 
 from .fabricas import criar_loja, vincular_conta
@@ -196,3 +197,34 @@ class PluggyApiTests(TestCase):
         conexao.save()
         resp = api.get("/api/v1/contas-bancarias/")
         self.assertEqual({c["origem"] for c in resp.json()}, {"ARQUIVO"})
+
+    def _testar(self, conexao):
+        resp = self.api.post(f"{BASE}{conexao.public_id}/testar/")
+        return resp.status_code, json.dumps(resp.json(), ensure_ascii=False)
+
+    def test_testar_com_segredo_ilegivel_da_400(self):
+        conexao = self.conexao(client_id="cid", item_ids="i1", client_secret_cifrado="lixo")
+        status, corpo = self._testar(conexao)
+        self.assertEqual(status, 400)
+        self.assertIn(
+            "Não foi possível ler o Client Secret salvo. Cadastre de novo na Plataforma.", corpo
+        )
+
+    def test_testar_sem_chave_de_cifra_da_400(self):
+        conexao = self.conexao(client_id="cid", item_ids="i1", client_secret_cifrado="lixo")
+        with override_settings(PLUGGY_CHAVE_CIFRA=""):
+            status, corpo = self._testar(conexao)
+        self.assertEqual(status, 400)
+        self.assertIn(SEM_CHAVE, corpo)
+
+    def test_testar_com_falha_da_pluggy_da_400(self):
+        conexao = self.conexao(client_id="cid", item_ids="i1")
+        conexao.guardar_segredo("s")
+        conexao.save()
+        with patch("app.services.pluggy.painel.ClientePluggy") as cls:
+            cls.return_value.contas.side_effect = FalhaDaPluggy(
+                401, "A Pluggy recusou as chaves desta conexão."
+            )
+            status, corpo = self._testar(conexao)
+        self.assertEqual(status, 400)
+        self.assertIn("A Pluggy recusou as chaves desta conexão.", corpo)
