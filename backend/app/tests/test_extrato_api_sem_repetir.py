@@ -212,6 +212,44 @@ class ApiSemRepetirTests(TestCase):
         self.assertIsNone(linhas.get(id_externo="tx-ana").chave_do_arquivo)
         self.assertIsNotNone(linhas.get(id_externo="tx-carlos").chave_do_arquivo)
 
+    def test_api_casa_pela_contraparte_mesmo_com_outra_linha_antes(self):
+        """O OFX so tem o Pix da Ana; a API traz o do Carlos primeiro.
+
+        A Pluggy manda o mais novo primeiro. Se o Carlos, por vir antes e nao
+        reconhecer ninguem, levasse a linha da Ana, o extrato mostraria a Ana
+        duas vezes e o Carlos nenhuma.
+        """
+        self.importar((NO_OFX, "-10.00", pix_no_ofx(ANA)))
+        do_ofx = self.linhas().get()
+
+        resultado = self.gravar(
+            pix_da_api("tx-carlos", "-10.00", CARLOS), pix_da_api("tx-ana", "-10.00", ANA)
+        )
+
+        self.assertEqual((resultado.novas, resultado.adotadas), (1, 1))
+        self.assertEqual(self.linhas().count(), 2)
+        do_ofx.refresh_from_db()
+        self.assertEqual(do_ofx.id_externo, "tx-ana")
+        self.assertEqual(self.linhas().get(id_externo="tx-carlos").chave, "pluggy:tx-carlos")
+
+    def test_arquivo_casa_pela_contraparte_mesmo_com_outra_linha_antes(self):
+        """O espelho: a API buscou antes do Pix do Carlos; o OFX traz os dois."""
+        self.gravar(pix_da_api("tx-ana", "-10.00", ANA))
+
+        resultado = self.importar(
+            (NO_OFX, "-10.00", pix_no_ofx(CARLOS)), (NO_OFX, "-10.00", pix_no_ofx(ANA))
+        )
+
+        self.assertEqual((resultado.novas, resultado.repetidas), (1, 1))
+        self.assertEqual(self.linhas().count(), 2)
+        # O Carlos entrou como linha nova do arquivo, e nao sumiu numa da Ana.
+        self.assertEqual(self.linhas().filter(descricao__contains="Carlos Lima").count(), 1)
+        da_api = self.linhas().get(id_externo="tx-ana")
+        do_carlos = self.linhas().get(descricao__contains="Carlos Lima")
+        self.assertIsNotNone(da_api.chave_do_arquivo)
+        self.assertNotEqual(da_api.chave_do_arquivo, do_carlos.chave)
+        self.assertIsNone(do_carlos.id_externo)
+
     def test_dia_diferente_nao_casa(self):
         self.importar((NO_OFX, "-10.00", pix_no_ofx(ANA)))
 

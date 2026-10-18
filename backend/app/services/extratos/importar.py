@@ -200,21 +200,17 @@ def importar_extrato(conta_bancaria, nome_do_arquivo, conteudo, usuario=None):
 def adotar_linhas_da_api(conta_bancaria, linhas_e_chaves):
     """As linhas do arquivo que a API ja gravou. Devolve as chaves adotadas.
 
-    Para cada linha, a candidata e a linha que nasceu da API e ainda nao tem
-    par de arquivo, do mesmo dia e valor: primeiro a da mesma contraparte,
-    senao a primeira. Adotar e so guardar a chave do arquivo nela, para o
-    proximo arquivo com a mesma linha tambem a achar; o resto fica como a API
-    gravou.
+    A candidata e a linha que nasceu da API e ainda nao tem par de arquivo, do
+    mesmo dia e valor; quem fica com qual decide `escolher_adotadas`. Adotar e
+    so guardar a chave do arquivo nela, para o proximo arquivo com a mesma
+    linha tambem a achar; o resto fica como a API gravou.
     """
     # Aqui e nao no topo: api.py importa deste modulo.
-    from .api import (
-        PREFIXO_DA_CHAVE,
-        candidatas_por_dia_e_valor,
-        mesma_contraparte,
-        tirar_candidata,
-    )
+    from .api import PREFIXO_DA_CHAVE, escolher_adotadas, mesma_contraparte
 
-    candidatas = candidatas_por_dia_e_valor(
+    linhas = [linha for linha, _ in linhas_e_chaves]
+    escolhidas = escolher_adotadas(
+        linhas,
         TransacaoBancaria.objects.filter(
             conta_bancaria=conta_bancaria,
             id_externo__isnull=False,
@@ -224,17 +220,14 @@ def adotar_linhas_da_api(conta_bancaria, linhas_e_chaves):
             # do arquivo dela ja esta em `chave`: casar outra linha de arquivo
             # com ela deixaria uma linha da API livre para engolir um Pix novo.
             chave__startswith=PREFIXO_DA_CHAVE,
-            data__in={linha.data for linha, _ in linhas_e_chaves},
-        )
+            data__in={linha.data for linha in linhas},
+        ),
+        lambda linha, candidata: mesma_contraparte(
+            linha.descricao, candidata.contraparte_nome, candidata.contraparte_documento
+        ),
     )
     adotadas = []
-    for linha, chave in linhas_e_chaves:
-        transacao = tirar_candidata(
-            candidatas[(linha.data, linha.valor)],
-            lambda candidata, linha=linha: mesma_contraparte(
-                linha.descricao, candidata.contraparte_nome, candidata.contraparte_documento
-            ),
-        )
+    for (_, chave), transacao in zip(linhas_e_chaves, escolhidas):
         if transacao is not None:
             transacao.chave_do_arquivo = chave
             adotadas.append(transacao)

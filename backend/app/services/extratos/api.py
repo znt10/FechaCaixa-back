@@ -61,26 +61,37 @@ def mesma_contraparte(descricao, nome, documento):
     return inteiro.search(normalizar_descricao(descricao)) is not None
 
 
-def candidatas_por_dia_e_valor(transacoes):
-    """As candidatas a adocao agrupadas por (data, valor), em ordem de id."""
-    grupos = defaultdict(list)
-    for transacao in transacoes.order_by("id"):
-        grupos[(transacao.data, transacao.valor)].append(transacao)
-    return grupos
+def escolher_adotadas(linhas, candidatas, e_a_mesma):
+    """A candidata que cada linha adota, ou None, na ordem de `linhas`.
 
+    Linha e candidata so casam no mesmo dia e valor, e em duas passadas:
+    1. a linha que reconhece candidatas pela contraparte
+       (`e_a_mesma(linha, candidata)`) fica com a de menor id entre elas;
+    2. as linhas que sobraram ficam com as candidatas que sobraram, em ordem
+       de id.
 
-def tirar_candidata(candidatas, e_a_mesma):
-    """Tira da lista e devolve a que sera adotada, ou None.
-
-    A primeira que `e_a_mesma` reconhece, senao a primeira; entre iguais, a de
-    menor id. Tirada da lista para nao ser adotada duas vezes na mesma rodada:
-    dois Pix iguais de R$ 10 no mesmo dia entram dois e ficam dois.
+    Numa passada so, a linha que nao esta na outra fonte levaria, por vir
+    antes, a candidata de uma linha seguinte que a reconheceria: o Pix do
+    Carlos ficaria na linha da Ana, e a Ana entraria de novo. Cada candidata e
+    adotada uma vez so: dois Pix iguais de R$ 10 no mesmo dia entram dois e
+    ficam dois.
     """
-    if not candidatas:
-        return None
-    escolhida = next((c for c in candidatas if e_a_mesma(c)), candidatas[0])
-    candidatas.remove(escolhida)
-    return escolhida
+    livres = defaultdict(list)
+    for candidata in candidatas.order_by("id"):
+        livres[(candidata.data, candidata.valor)].append(candidata)
+
+    adotadas = [None] * len(linhas)
+    for i, linha in enumerate(linhas):
+        grupo = livres[(linha.data, linha.valor)]
+        reconhecida = next((c for c in grupo if e_a_mesma(linha, c)), None)
+        if reconhecida is not None:
+            grupo.remove(reconhecida)
+            adotadas[i] = reconhecida
+    for i, linha in enumerate(linhas):
+        grupo = livres[(linha.data, linha.valor)]
+        if adotadas[i] is None and grupo:
+            adotadas[i] = grupo.pop(0)
+    return adotadas
 
 
 @transaction.atomic
@@ -88,9 +99,9 @@ def gravar_linhas_da_api(conta_bancaria, linhas, conteudo_bruto):
     """Grava o que a API trouxe de novo e adota o que o arquivo ja gravou.
 
     Linha a linha: o id ja esta na conta bancaria, repetida; uma linha de
-    arquivo ainda sem id, do mesmo dia e valor, e adotada (primeiro a da mesma
-    contraparte, senao a primeira) e ganha o id e a contraparte, sem mudar
-    tipo, categoria, par nem descricao; senao, linha nova.
+    arquivo ainda sem id, do mesmo dia e valor, e adotada (quem fica com qual
+    decide `escolher_adotadas`) e ganha o id e a contraparte, sem mudar tipo,
+    categoria, par nem descricao; senao, linha nova.
 
     A importacao, que guarda o que a API respondeu, so e criada quando ha
     linha nova: a adotada continua na importacao do arquivo dela.
@@ -107,27 +118,28 @@ def gravar_linhas_da_api(conta_bancaria, linhas, conteudo_bruto):
             id_externo__in=[linha.id_externo for linha in linhas],
         ).values_list("id_externo", flat=True)
     )
-    candidatas = candidatas_por_dia_e_valor(
-        TransacaoBancaria.objects.filter(
-            conta_bancaria=conta_bancaria,
-            id_externo__isnull=True,
-            data__in={linha.data for linha in linhas},
-        )
-    )
-
-    novas, adotadas = [], []
+    a_gravar = []
     for linha in linhas:
         if linha.id_externo in ja_gravadas:
             continue
         # Ja aqui, e nao so no banco: a mesma transacao duas vezes na resposta
         # (paginas que se cruzam) seria duas linhas novas com o mesmo id.
         ja_gravadas.add(linha.id_externo)
-        transacao = tirar_candidata(
-            candidatas[(linha.data, linha.valor)],
-            lambda candidata, linha=linha: mesma_contraparte(
-                candidata.descricao, linha.contraparte_nome, linha.contraparte_documento
-            ),
-        )
+        a_gravar.append(linha)
+
+    escolhidas = escolher_adotadas(
+        a_gravar,
+        TransacaoBancaria.objects.filter(
+            conta_bancaria=conta_bancaria,
+            id_externo__isnull=True,
+            data__in={linha.data for linha in a_gravar},
+        ),
+        lambda linha, candidata: mesma_contraparte(
+            candidata.descricao, linha.contraparte_nome, linha.contraparte_documento
+        ),
+    )
+    novas, adotadas = [], []
+    for linha, transacao in zip(a_gravar, escolhidas):
         if transacao is None:
             novas.append(linha)
             continue
