@@ -131,6 +131,14 @@ class BuscaPluggyTests(TestCase):
         self.assertEqual(self.conexao.estado, ConexaoPluggy.Estado.COM_ERRO)
         self.assertEqual(mail.outbox[-1].subject, ASSUNTO_CAIU)
 
+    def test_item_atualizando_nao_derruba_nem_avisa(self):
+        self.conexao.conectada_em = AGORA
+        self.conexao.save()
+        for status in ("UPDATING", "CREATED"):
+            self.rodar(ClienteFalso(status=status))
+            self.assertEqual(self.conexao.estado, ConexaoPluggy.Estado.ATIVA)
+        self.assertEqual(len(mail.outbox), 0)
+
     def test_item_parado_ha_mais_de_48h_derruba(self):
         self.conexao.conectada_em = AGORA
         self.conexao.save()

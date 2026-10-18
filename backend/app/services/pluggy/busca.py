@@ -25,6 +25,10 @@ PRIMEIRA_JANELA = timedelta(days=60)
 PARADA_DEPOIS_DE = timedelta(hours=48)
 FALHAS_PARA_CAIR = 3
 
+# Meu Pluggy sincroniza todo dia: item atualizando nao e item caido. Qualquer
+# outro status (LOGIN_ERROR, OUTDATED, WAITING_USER_INPUT, desconhecido) e erro.
+STATUS_SAUDAVEIS = ("UPDATED", "UPDATING", "CREATED")
+
 MOTIVO_AUTORIZACAO = (
     "A autorização no banco venceu ou foi cancelada. Reconecte a conta no Meu Pluggy."
 )
@@ -55,7 +59,7 @@ def motivo_da_queda(conexao, agora):
     if conexao.falhas_seguidas >= FALHAS_PARA_CAIR:
         return conexao.ultimo_erro
     itens = conexao.itens.values()
-    if any(item.get("status") != "UPDATED" for item in itens):
+    if any(item.get("status") not in STATUS_SAUDAVEIS for item in itens):
         return MOTIVO_AUTORIZACAO
     for item in itens:
         atualizado = _instante(item.get("atualizado_em"))
