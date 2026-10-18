@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from app.models import (
     CategoriaDeMovimento,
+    ConexaoPluggy,
     ContaBancaria,
     ElementoDeDespesa,
     Loja,
@@ -20,6 +21,23 @@ class ContaBancariaSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(source="public_id", read_only=True)
     loja = LojaDaNotaSerializer(read_only=True)
     banco_nome = serializers.CharField(source="get_banco_display", read_only=True)
+
+    origem = serializers.SerializerMethodField()
+    atualizado_em = serializers.SerializerMethodField()
+
+    def get_origem(self, conta):
+        # Desligar a conexao devolve a conta ao arquivo sem desfazer o vinculo.
+        veio_da_api = (
+            conta.pluggy_account_id
+            and conta.conexao_pluggy_id
+            and conta.conexao_pluggy.estado != ConexaoPluggy.Estado.DESLIGADA
+        )
+        return "PLUGGY" if veio_da_api else "ARQUIVO"
+
+    def get_atualizado_em(self, conta):
+        if self.get_origem(conta) != "PLUGGY":
+            return None
+        return conta.conexao_pluggy.ultima_busca_ok_em
 
     # Escrita por id, leitura aninhada, pelo mesmo motivo do `grupo_id` do
     # elemento. O queryset e o global: quem responde "essa loja e sua" e o
@@ -41,7 +59,7 @@ class ContaBancariaSerializer(serializers.ModelSerializer):
         model = ContaBancaria
         fields = [
             "id", "loja", "loja_id", "banco", "banco_nome", "agencia", "numero",
-            "apelido", "ativo",
+            "apelido", "ativo", "origem", "atualizado_em",
         ]
         # Sem o validador de unicidade que o DRF monta sozinho a partir da
         # restricao do modelo: ele tornava a agencia obrigatoria (o Nubank e o

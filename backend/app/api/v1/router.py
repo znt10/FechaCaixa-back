@@ -26,6 +26,13 @@ from .views.acesso import (
 )
 from .views.mensalidade import JaPagueiView, MinhaMensalidadeView
 from .views.planilha import PlanilhaDoPeriodoView
+from .views.pluggy import (
+    BuscarConexaoPluggyView,
+    ConexaoPluggyView,
+    PluggyDaPlataformaView,
+    TestarConexaoPluggyView,
+    VincularContasPluggyView,
+)
 from .views.plataforma import (
     ConfirmarPagamentoView,
     EmpresaDaPlataformaView,
@@ -126,6 +133,27 @@ urlpatterns = router.urls + [
         "minha-mensalidade/ja-paguei/",
         JaPagueiView.as_view(),
         name="minha-mensalidade-ja-paguei",
+    ),
+    path("plataforma/pluggy/", PluggyDaPlataformaView.as_view(), name="plataforma-pluggy"),
+    path(
+        "plataforma/pluggy/<uuid:public_id>/",
+        ConexaoPluggyView.as_view(),
+        name="plataforma-pluggy-conexao",
+    ),
+    path(
+        "plataforma/pluggy/<uuid:public_id>/testar/",
+        TestarConexaoPluggyView.as_view(),
+        name="plataforma-pluggy-testar",
+    ),
+    path(
+        "plataforma/pluggy/<uuid:public_id>/vincular/",
+        VincularContasPluggyView.as_view(),
+        name="plataforma-pluggy-vincular",
+    ),
+    path(
+        "plataforma/pluggy/<uuid:public_id>/buscar/",
+        BuscarConexaoPluggyView.as_view(),
+        name="plataforma-pluggy-buscar",
     ),
     path("plataforma/empresas/", EmpresasDaPlataformaView.as_view(), name="plataforma-empresas"),
     path(

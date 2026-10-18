@@ -117,7 +117,7 @@ class ContaBancariaViewSet(
     pagination_class = None
 
     def get_queryset(self):
-        base = ContaBancaria.objects.select_related("loja")
+        base = ContaBancaria.objects.select_related("loja", "conexao_pluggy")
         if self.request.user.is_superuser:
             return base.all()
         conta = self.conta_do_pedido()
