@@ -718,6 +718,40 @@ class ApiDoBancoTests(CenarioDoBanco):
         item = self.api.get("/api/v1/transacoes-bancarias/").data["results"][0]
         self.assertTrue(item["automatica"])
 
+    def test_resumo_traz_o_fluxo_de_cada_dia(self):
+        """O grafico do fluxo de caixa: entrou e saiu por dia, sem a transferencia
+        entre lojas no consolidado (o mesmo dinheiro contado duas vezes)."""
+        importar_extrato(
+            self.banco_a,
+            "a.ofx",
+            ofx(
+                [("20261002", "-500.00", "PIX LOJA B"), ("20261002", "80.00", "VENDA"),
+                 ("20261004", "-30.00", "MERCADO")],
+                conta="11111-1",
+            ),
+        )
+        importar_extrato(
+            self.banco_b, "b.ofx", ofx([("20261002", "500.00", "PIX LOJA A")], conta="22222-2")
+        )
+
+        consolidado = self.api.get("/api/v1/transacoes-bancarias/resumo/").data
+        so_a = self.api.get(f"/api/v1/transacoes-bancarias/resumo/?loja={self.loja_a.public_id}").data
+
+        self.assertEqual(
+            consolidado["por_dia"],
+            [
+                {"data": "2026-10-02", "entradas": "80.00", "saidas": "0.00"},
+                {"data": "2026-10-04", "entradas": "0.00", "saidas": "-30.00"},
+            ],
+        )
+        self.assertEqual(
+            so_a["por_dia"],
+            [
+                {"data": "2026-10-02", "entradas": "80.00", "saidas": "-500.00"},
+                {"data": "2026-10-04", "entradas": "0.00", "saidas": "-30.00"},
+            ],
+        )
+
     def test_resumo_conta_o_que_falta_classificar(self):
         importar_extrato(
             self.banco_a, "a.ofx", ofx([("20261001", "-7.00", "X"), ("20261001", "3.00", "Y")], conta="11111-1")

@@ -86,6 +86,21 @@ def resumir(transacoes, consolidado):
     for bloco in por_tipo.values():
         bloco["valor"] = _texto(bloco["valor"])
 
+    # O grafico do fluxo de caixa: o mesmo queryset (no consolidado, ja sem a
+    # transferencia entre lojas), dia a dia. Dia sem movimento nao vem; quem
+    # desenha decide se mostra o buraco.
+    por_dia = [
+        {
+            "data": dia["data"].isoformat(),
+            "entradas": _texto(dia["entradas"]),
+            "saidas": _texto(dia["saidas"]),
+        }
+        for dia in transacoes.order_by()
+        .values("data")
+        .annotate(entradas=_soma(Q(valor__gt=0)), saidas=_soma(Q(valor__lt=0)))
+        .order_by("data")
+    ]
+
     return {
         "consolidado": consolidado,
         "entradas": _texto(totais["entradas"]),
@@ -95,4 +110,5 @@ def resumir(transacoes, consolidado):
             "valor": _texto(totais["pendentes_valor"]),
         },
         "por_tipo": list(por_tipo.values()),
+        "por_dia": por_dia,
     }
