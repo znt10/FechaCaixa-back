@@ -6,6 +6,7 @@ estado (conectou, caiu, voltou), nunca por rodada.
 """
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -19,6 +20,8 @@ from . import avisos
 from .cifra import CifraNaoConfigurada, decifrar
 from .cliente import ClientePluggy, FalhaDaPluggy
 from .transacoes import linha_da_transacao
+
+logger = logging.getLogger(__name__)
 
 JANELA = timedelta(days=7)
 PRIMEIRA_JANELA = timedelta(days=60)
@@ -36,6 +39,21 @@ ERRO_SEGREDO_ILEGIVEL = (
     "Não foi possível ler o Client Secret salvo. Cadastre de novo na Plataforma."
 )
 ERRO_SEM_CHAVE = "Defina PLUGGY_CHAVE_CIFRA no servidor antes de ligar a Pluggy."
+ERRO_INESPERADO = "Erro inesperado na busca. Veja o log do serviço pluggy."
+
+ESTADOS_QUE_BUSCAM = (ConexaoPluggy.Estado.ATIVA, ConexaoPluggy.Estado.COM_ERRO)
+
+# So o que a busca escreve. O resto da linha (e-mail, chaves, Item IDs) e do
+# dono: salvar a linha inteira desfaria o PATCH que chegou durante a busca.
+CAMPOS_DA_BUSCA = [
+    "estado",
+    "conectada_em",
+    "ultima_busca_ok_em",
+    "ultimo_erro",
+    "falhas_seguidas",
+    "itens",
+    "updated_at",
+]
 
 
 @dataclass
@@ -92,7 +110,13 @@ def _buscar_contas(conexao, cliente, agora):
 
 def _rodar(conexao, cliente, agora):
     """Pede os itens e o extrato. Devolve (novas, adotadas); levanta FalhaDaPluggy."""
-    for item_id in conexao.lista_de_itens():
+    item_ids = conexao.lista_de_itens()
+    # O item que saiu do Item IDs nunca mais e pedido: guardado, ele ficaria
+    # parado para sempre e derrubaria a conexao sem volta.
+    conexao.itens = {
+        item_id: item for item_id, item in conexao.itens.items() if item_id in item_ids
+    }
+    for item_id in item_ids:
         item = cliente.item(item_id)
         conexao.itens[item_id] = {
             "status": item.get("status"),
@@ -103,7 +127,11 @@ def _rodar(conexao, cliente, agora):
 
 def buscar_conexao(conexao, agora=None, cliente=None):
     agora = agora or timezone.now()
+    # Relida: quem chamou pode te-la lido antes de o dono desligar a conexao.
+    conexao.refresh_from_db()
     estado_antes = conexao.estado
+    if estado_antes not in ESTADOS_QUE_BUSCAM:
+        return ResultadoDaBusca(conexao, 0, 0, estado_antes, estado_antes)
     novas = adotadas = 0
     deu_certo = False
     try:
@@ -119,6 +147,12 @@ def buscar_conexao(conexao, agora=None, cliente=None):
         conexao.ultimo_erro = ERRO_SEGREDO_ILEGIVEL
     except CifraNaoConfigurada:
         conexao.ultimo_erro = ERRO_SEM_CHAVE
+    except Exception:
+        # Um bug ou um dado estranho desta conexao nao pode parar as outras
+        # nem passar sem contar falha. O que ela gravava do extrato o atomic
+        # de gravar_linhas_da_api ja desfez.
+        logger.exception("Erro inesperado na busca da conexao Pluggy %s.", conexao.pk)
+        conexao.ultimo_erro = ERRO_INESPERADO
 
     if deu_certo:
         conexao.falhas_seguidas = 0
@@ -132,16 +166,22 @@ def buscar_conexao(conexao, agora=None, cliente=None):
 
     motivo = motivo_da_queda(conexao, agora)
     caiu = conexao.estado == ConexaoPluggy.Estado.ATIVA and bool(motivo)
-    voltou = conexao.estado == ConexaoPluggy.Estado.COM_ERRO and not motivo
+    # So volta numa rodada que deu certo: os itens podem estar em dia e o
+    # extrato, mesmo assim, nao ter chegado.
+    voltou = (
+        conexao.estado == ConexaoPluggy.Estado.COM_ERRO and deu_certo and not motivo
+    )
     if caiu:
         conexao.estado = ConexaoPluggy.Estado.COM_ERRO
-        conexao.ultimo_erro = motivo
     elif voltou:
         conexao.estado = ConexaoPluggy.Estado.ATIVA
-    if deu_certo and not motivo:
+    if conexao.estado == ConexaoPluggy.Estado.COM_ERRO and motivo:
+        # A falha solta desta rodada nao toma o lugar do motivo da queda.
+        conexao.ultimo_erro = motivo
+    elif deu_certo and not motivo:
         # Falha solta que ja passou: nao deixa o texto velho na tela.
         conexao.ultimo_erro = ""
-    conexao.save()
+    conexao.save(update_fields=CAMPOS_DA_BUSCA)
 
     if primeira_boa:
         avisos.avisar_conectada(conexao, novas + adotadas)
@@ -154,7 +194,5 @@ def buscar_conexao(conexao, agora=None, cliente=None):
 
 
 def buscar_todas(agora=None):
-    conexoes = ConexaoPluggy.objects.filter(
-        estado__in=[ConexaoPluggy.Estado.ATIVA, ConexaoPluggy.Estado.COM_ERRO]
-    ).select_related("conta")
+    conexoes = ConexaoPluggy.objects.filter(estado__in=ESTADOS_QUE_BUSCAM)
     return [buscar_conexao(conexao, agora=agora) for conexao in conexoes]

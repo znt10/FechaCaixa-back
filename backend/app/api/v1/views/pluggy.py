@@ -7,7 +7,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from app.models import Conta, ConexaoPluggy, ContaBancaria
-from app.services.pluggy.busca import buscar_conexao
+from app.services.pluggy.busca import ESTADOS_QUE_BUSCAM, buscar_conexao
 from app.services.pluggy.cifra import cifra_configurada
 from app.services.pluggy.painel import (
     ERRO_SEM_CHAVE,
@@ -21,6 +21,7 @@ from .plataforma import DaPlataforma
 
 ERRO_CONTA_DE_OUTRA_EMPRESA = "Esta conta bancária é de outra empresa."
 ERRO_CONTA_JA_LIGADA = "Esta conta da Pluggy já está ligada a outra conta bancária."
+ERRO_BUSCAR_SEM_ATIVAR = "Ative a conexão antes de buscar."
 
 
 class NovaConexaoSerializer(serializers.Serializer):
@@ -85,12 +86,17 @@ class ConexaoPluggyView(DaPlataforma):
         entrada.is_valid(raise_exception=True)
         dados = dict(entrada.validated_data)
         segredo = dados.pop("client_secret", None)
+        # So o que veio no PATCH: salvar a linha inteira desfaria o que a
+        # busca gravou (estado, erro, falhas) depois de a conexao ser lida.
+        campos = list(dados) + ["updated_at"]
         if segredo is not None:
             _exigir_cifra()
             conexao.guardar_segredo(segredo)
+            campos += ["client_secret_cifrado", "segredo_salvo_em"]
         for campo, valor in dados.items():
             setattr(conexao, campo, valor)
-        conexao.save()
+        conexao.save(update_fields=campos)
+        conexao.refresh_from_db()
         return Response(linha_da_conexao(conexao))
 
 
@@ -145,6 +151,10 @@ class VincularContasPluggyView(DaPlataforma):
 class BuscarConexaoPluggyView(DaPlataforma):
     def post(self, request, public_id):
         conexao = _conexao(public_id)
+        # Em conexao configurando, a primeira busca boa mandaria o e-mail de
+        # "conectada" de uma conexao que o dono ainda nao ligou.
+        if conexao.estado not in ESTADOS_QUE_BUSCAM:
+            raise ValidationError({"detail": ERRO_BUSCAR_SEM_ATIVAR})
         buscar_conexao(conexao)
         conexao.refresh_from_db()
         return Response(linha_da_conexao(conexao))

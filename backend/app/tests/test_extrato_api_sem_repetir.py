@@ -144,6 +144,35 @@ class ApiSemRepetirTests(TestCase):
             ("Ana Beatriz Souza", "12374533800", "1065391005"),
         )
 
+    def test_api_depois_do_ofx_adota_e_mantem_o_par_entre_lojas(self):
+        """A Loja A mandou 500 para a Loja B; os dois OFX ja parearam."""
+        loja_b = criar_loja(nome_loja="Loja B", cidade="Patos", endereco="Rua 2")
+        banco_b = criar_conta_bancaria(loja_b, numero="22222-2", banco="INTER")
+        self.importar((NO_OFX, "-500.00", "PIX ENVIADO LOJA B"))
+        self.importar((NO_OFX, "500.00", "PIX RECEBIDO LOJA A"), banco=banco_b)
+        saida = self.linhas().get()
+        entrada = self.linhas(banco_b).get()
+        self.assertEqual((saida.par_id, entrada.par_id), (entrada.id, saida.id))
+        tipo_e_categoria = (saida.tipo, saida.categoria_id)
+
+        resultado = self.gravar(
+            LinhaDoExtrato(
+                data=DIA,
+                valor=Decimal("-500.00"),
+                descricao="Transferência enviada pelo Pix - Loja B",
+                id_externo="tx-1",
+                contraparte_nome="Loja B",
+                contraparte_conta="222222",
+            )
+        )
+
+        self.assertEqual((resultado.novas, resultado.adotadas), (0, 1))
+        saida.refresh_from_db()
+        entrada.refresh_from_db()
+        self.assertEqual(saida.id_externo, "tx-1")
+        self.assertEqual((saida.par_id, entrada.par_id), (entrada.id, saida.id))
+        self.assertEqual((saida.tipo, saida.categoria_id), tipo_e_categoria)
+
     def test_o_mesmo_ofx_duas_vezes_depois_da_api_nao_duplica(self):
         self.gravar(pix_da_api("tx-1", "-10.00"), pix_da_api("tx-2", "-40.00", CARLOS))
         arquivo = [(NO_OFX, "-10.00", pix_no_ofx(ANA)), (NO_OFX, "-40.00", pix_no_ofx(CARLOS))]

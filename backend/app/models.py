@@ -1292,9 +1292,18 @@ class TransacaoBancaria(BaseModel):
     # para o arquivo subido depois nao duplicar.
     chave_do_arquivo = models.CharField(max_length=80, null=True, blank=True)
     # Quem esta do outro lado, como a API informa. Documento e conta so digitos.
-    contraparte_nome = models.CharField(max_length=150, blank=True)
-    contraparte_documento = models.CharField(max_length=20, blank=True)
-    contraparte_conta = models.CharField(max_length=30, blank=True)
+    # DEFAULT tambem no banco: o codigo de antes da Pluggy (um rollback, ou o
+    # app de outra pasta no mesmo MySQL) grava a linha sem estas colunas, e o
+    # MySQL estrito recusaria o INSERT.
+    contraparte_nome = models.CharField(
+        max_length=150, blank=True, default="", db_default=""
+    )
+    contraparte_documento = models.CharField(
+        max_length=20, blank=True, default="", db_default=""
+    )
+    contraparte_conta = models.CharField(
+        max_length=30, blank=True, default="", db_default=""
+    )
 
     tipo = models.CharField(
         max_length=15, choices=TipoDeMovimento.choices, null=True, blank=True

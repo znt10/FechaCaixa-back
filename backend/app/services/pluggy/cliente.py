@@ -78,12 +78,17 @@ class ClientePluggy:
         caminho = "/v2/transactions"
         pedido = params
         resultados = []
+        # Um `next` que ja veio pediria a mesma pagina de novo, sem fim.
+        vistos = set()
         while True:
             pagina = self._get(caminho, pedido)
             resultados.extend(pagina.get("results", []))
             proximo = pagina.get("next")
             if not proximo:
                 return resultados
+            if proximo in vistos:
+                raise FalhaDaPluggy(None, "A Pluggy repetiu a mesma página de transações.")
+            vistos.add(proximo)
             if proximo.startswith("http"):
                 partes = urllib.parse.urlparse(proximo)
                 caminho = partes.path + ("?" + partes.query if partes.query else "")

@@ -19,7 +19,11 @@ from django.utils import timezone
 
 from app.models import ImportacaoDeExtrato, TransacaoBancaria
 
-from .importar import ResultadoDaImportacao, classificar_o_que_entrou
+from .importar import (
+    ResultadoDaImportacao,
+    classificar_o_que_entrou,
+    travar_a_conta_bancaria,
+)
 from .linhas import RecusaDeExtrato, assinatura_da_descricao, normalizar_descricao
 
 # A `chave` da linha que nasceu da API. E por ela que o arquivo sabe que a
@@ -106,6 +110,7 @@ def gravar_linhas_da_api(conta_bancaria, linhas, conteudo_bruto):
     A importacao, que guarda o que a API respondeu, so e criada quando ha
     linha nova: a adotada continua na importacao do arquivo dela.
     """
+    travar_a_conta_bancaria(conta_bancaria)
     if not conta_bancaria.ativo:
         raise RecusaDeExtrato(
             "Esta conta bancária está desativada. Ative a conta antes de "

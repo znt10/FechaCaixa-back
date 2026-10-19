@@ -67,6 +67,30 @@ class ClientePluggyTests(SimpleTestCase):
         self.assertEqual(c3.kwargs["params"]["after"], "cur3")
         self.assertEqual(c3.kwargs["params"]["accountId"], "a1")
 
+    def test_next_repetido_vira_falha_e_nao_laco_sem_fim(self):
+        url = "https://api.pluggy.ai/v2/transactions?accountId=a1&page=2"
+        for proximo in ("cur2", url):
+            with self.subTest(proximo=proximo):
+                chamadas = []
+
+                def pedir(metodo, caminho, corpo=None, params=None):
+                    chamadas.append(caminho)
+                    if len(chamadas) > 10:
+                        raise AssertionError("laço sem fim no next")
+                    if caminho == "/auth":
+                        return {"apiKey": "k"}
+                    return {"results": [{"id": "t1"}], "next": proximo}
+
+                with patch.object(ClientePluggy, "_pedir", side_effect=pedir):
+                    with self.assertRaises(FalhaDaPluggy) as ctx:
+                        ClientePluggy("id", "s").transacoes(
+                            "a1", date(2026, 10, 11), date(2026, 10, 18)
+                        )
+                self.assertIsNone(ctx.exception.status)
+                self.assertEqual(
+                    ctx.exception.mensagem, "A Pluggy repetiu a mesma página de transações."
+                )
+
     def _http(self, codigo):
         return urllib.error.HTTPError("u", codigo, "x", {}, io.BytesIO(b"{}"))
 

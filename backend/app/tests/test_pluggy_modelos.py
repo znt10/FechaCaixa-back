@@ -2,13 +2,23 @@ import datetime
 from decimal import Decimal
 
 from cryptography.fernet import Fernet
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.test import TestCase, override_settings
 
 from app.models import ConexaoPluggy, ContaBancaria, TransacaoBancaria
 from app.services.extratos.linhas import LinhaDoExtrato
 
 from .fabricas import conta_padrao, criar_loja
+
+# Os campos que a 0059 trouxe. O codigo de antes dela (um rollback, ou o app de
+# outra pasta no mesmo banco) nao os conhece e nao os manda no INSERT.
+CAMPOS_DA_0059 = {
+    "id_externo",
+    "chave_do_arquivo",
+    "contraparte_nome",
+    "contraparte_documento",
+    "contraparte_conta",
+}
 
 
 class PluggyModelosTests(TestCase):
@@ -28,6 +38,45 @@ class PluggyModelosTests(TestCase):
             descricao="PIX",
             chave=chave,
             **campos,
+        )
+
+    def test_insert_do_codigo_de_antes_da_pluggy_passa_sem_a_contraparte(self):
+        """O INSERT cru, so com as colunas que existiam antes da 0059.
+
+        Sem DEFAULT no banco, o MySQL estrito recusa a linha e todo upload de
+        OFX do codigo antigo vira 500.
+        """
+        antiga = TransacaoBancaria(
+            conta=self.conta,
+            conta_bancaria=self.conta_bancaria,
+            data=datetime.date(2026, 10, 1),
+            valor=Decimal("10.00"),
+            descricao="PIX",
+            chave="antiga",
+        )
+        campos = [
+            campo
+            for campo in TransacaoBancaria._meta.concrete_fields
+            if not campo.primary_key and campo.name not in CAMPOS_DA_0059
+        ]
+        valores = [
+            campo.get_db_prep_save(campo.pre_save(antiga, add=True), connection)
+            for campo in campos
+        ]
+        tabela = connection.ops.quote_name(TransacaoBancaria._meta.db_table)
+        colunas = ", ".join(connection.ops.quote_name(campo.column) for campo in campos)
+        marcas = ", ".join(["%s"] * len(campos))
+        with connection.cursor() as cursor:
+            cursor.execute(f"INSERT INTO {tabela} ({colunas}) VALUES ({marcas})", valores)
+
+        gravada = TransacaoBancaria.objects.get(chave="antiga")
+        self.assertEqual(
+            (
+                gravada.contraparte_nome,
+                gravada.contraparte_documento,
+                gravada.contraparte_conta,
+            ),
+            ("", "", ""),
         )
 
     def test_dois_ids_externos_vazios_convivem(self):

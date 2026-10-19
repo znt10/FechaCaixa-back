@@ -28,7 +28,7 @@ class PluggyApiTests(TestCase):
         self.empresa = Conta.objects.create(nome="Padaria Sol")
         self.loja = criar_loja(conta=self.empresa, nome_loja="Centro")
         self.cb = ContaBancaria.objects.create(
-            loja=self.loja, banco="SANTANDER", numero="6190383903"
+            loja=self.loja, banco="SANTANDER", numero="1234567890"
         )
 
     def conexao(self, **campos):
@@ -86,7 +86,7 @@ class PluggyApiTests(TestCase):
         conexao.save()
         with patch("app.services.pluggy.painel.ClientePluggy") as cls:
             cls.return_value.contas.return_value = [
-                {"id": "acc-1", "number": "619038390-3", "name": "Conta"},
+                {"id": "acc-1", "number": "123456789-0", "name": "Conta"},
                 {"id": "acc-2", "number": "111-1", "name": "Outra"},
             ]
             resp = self.api.post(f"{BASE}{conexao.public_id}/testar/")
@@ -189,8 +189,8 @@ class PluggyApiTests(TestCase):
         resp = api.get("/api/v1/contas-bancarias/")
         self.assertEqual(resp.status_code, 200, resp.content)
         por_numero = {c["numero"]: c for c in resp.json()}
-        self.assertEqual(por_numero["6190383903"]["origem"], "PLUGGY")
-        self.assertIsNotNone(por_numero["6190383903"]["atualizado_em"])
+        self.assertEqual(por_numero["1234567890"]["origem"], "PLUGGY")
+        self.assertIsNotNone(por_numero["1234567890"]["atualizado_em"])
         self.assertEqual(por_numero["7"]["origem"], "ARQUIVO")
         self.assertIsNone(por_numero["7"]["atualizado_em"])
         conexao.estado = "DESLIGADA"
@@ -228,3 +228,38 @@ class PluggyApiTests(TestCase):
             status, corpo = self._testar(conexao)
         self.assertEqual(status, 400)
         self.assertIn("A Pluggy recusou as chaves desta conexão.", corpo)
+
+    def test_buscar_so_em_conexao_ativa_ou_com_erro(self):
+        """Buscar em conexao configurando mandaria o e-mail de conectada."""
+        for estado in ("CONFIGURANDO", "DESLIGADA"):
+            with self.subTest(estado=estado):
+                conexao = self.conexao(client_id="cid", item_ids="i1", estado=estado)
+                with patch("app.services.pluggy.busca.ClientePluggy") as cls:
+                    resp = self.api.post(f"{BASE}{conexao.public_id}/buscar/")
+                self.assertEqual(resp.status_code, 400)
+                self.assertEqual(resp.json(), {"detail": "Ative a conexão antes de buscar."})
+                cls.assert_not_called()
+                conexao.refresh_from_db()
+                self.assertEqual(conexao.estado, estado)
+
+    def test_patch_nao_desfaz_o_que_a_busca_gravou(self):
+        """O PATCH leu a conexao ativa; antes de salvar, a busca a derrubou."""
+        conexao = self.conexao(estado="ATIVA")
+        lida_antes = ConexaoPluggy.objects.select_related("conta").get(pk=conexao.pk)
+        ConexaoPluggy.objects.filter(pk=conexao.pk).update(
+            estado="COM_ERRO", ultimo_erro="caiu", falhas_seguidas=3
+        )
+
+        with patch("app.api.v1.views.pluggy._conexao", return_value=lida_antes):
+            resp = self.api.patch(
+                f"{BASE}{conexao.public_id}/", {"email": "novo@b.com"}, format="json"
+            )
+
+        self.assertEqual(resp.status_code, 200, resp.content)
+        conexao.refresh_from_db()
+        self.assertEqual(conexao.email, "novo@b.com")
+        self.assertEqual(
+            (conexao.estado, conexao.ultimo_erro, conexao.falhas_seguidas),
+            ("COM_ERRO", "caiu", 3),
+        )
+        self.assertEqual(resp.json()["estado"], "COM_ERRO")

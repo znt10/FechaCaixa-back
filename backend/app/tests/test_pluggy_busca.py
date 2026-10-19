@@ -1,4 +1,5 @@
 import datetime
+from unittest import mock
 
 from cryptography.fernet import Fernet
 from django.core import mail
@@ -49,6 +50,18 @@ class ClienteFalso:
     def transacoes(self, account_id, de, ate):
         self.pedidos.append((account_id, de, ate))
         return self.lista
+
+
+class ClienteQueQuebraNoExtrato(ClienteFalso):
+    """Responde os itens e levanta `erro` ao pedir o extrato."""
+
+    def __init__(self, erro, **campos):
+        super().__init__(**campos)
+        self.erro = erro
+
+    def transacoes(self, account_id, de, ate):
+        self.pedidos.append((account_id, de, ate))
+        raise self.erro
 
 
 @override_settings(
@@ -206,3 +219,122 @@ class BuscaPluggyTests(TestCase):
     def test_sem_email_proprio_avisa_no_da_mensalidade(self):
         self.rodar(ClienteFalso(transacoes=[transacao("t1")]))
         self.assertEqual(mail.outbox[0].to, ["mensalidade@x.io"])
+
+    def test_item_que_saiu_da_conexao_nao_derruba(self):
+        """O item velho saiu do Item IDs: o que estava guardado dele sai junto.
+
+        Parado ha 5 dias, ele derrubaria a conexao para sempre, porque nunca
+        mais e pedido a Pluggy e nunca mais atualiza.
+        """
+        self.conexao.conectada_em = AGORA
+        self.conexao.item_ids = "item-novo"
+        self.conexao.itens = {
+            "item-velho": {"status": "UPDATED", "atualizado_em": "2026-10-13T15:00:00.000Z"},
+        }
+        self.conexao.save()
+
+        self.rodar(ClienteFalso())
+
+        self.assertEqual(self.conexao.estado, ConexaoPluggy.Estado.ATIVA)
+        self.assertEqual(list(self.conexao.itens), ["item-novo"])
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_erro_inesperado_conta_como_falha(self):
+        with self.assertLogs("app.services.pluggy.busca", level="ERROR"):
+            self.rodar(ClienteQueQuebraNoExtrato(KeyError("date")))
+
+        self.assertEqual(self.conexao.falhas_seguidas, 1)
+        self.assertEqual(
+            self.conexao.ultimo_erro,
+            "Erro inesperado na busca. Veja o log do serviço pluggy.",
+        )
+        self.assertEqual(TransacaoBancaria.objects.count(), 0)
+
+    def test_buscar_todas_segue_depois_de_uma_conexao_que_explode(self):
+        outra = ConexaoPluggy.objects.create(
+            conta=self.titular, email="o@b.c", client_id="cid-outra",
+            client_secret_cifrado=cifrar("segredo"), item_ids="item2",
+            estado=ConexaoPluggy.Estado.ATIVA,
+        )
+
+        def cliente_da_conexao(client_id, segredo):
+            if client_id == self.conexao.client_id:
+                return ClienteQueQuebraNoExtrato(KeyError("date"))
+            return ClienteFalso()
+
+        with mock.patch.object(busca, "ClientePluggy", side_effect=cliente_da_conexao):
+            with self.assertLogs("app.services.pluggy.busca", level="ERROR"):
+                resultados = busca.buscar_todas(agora=AGORA)
+
+        self.assertEqual(len(resultados), 2)
+        self.conexao.refresh_from_db()
+        outra.refresh_from_db()
+        self.assertEqual(self.conexao.falhas_seguidas, 1)
+        self.assertEqual(outra.falhas_seguidas, 0)
+        self.assertEqual(outra.ultima_busca_ok_em, AGORA)
+
+    def _cair_por_autorizacao(self):
+        self.conexao.conectada_em = AGORA
+        self.conexao.save()
+        self.rodar(ClienteFalso(status="LOGIN_ERROR"))
+        self.assertEqual(self.conexao.estado, ConexaoPluggy.Estado.COM_ERRO)
+        mail.outbox.clear()
+
+    def test_rodada_que_falhou_nao_avisa_que_voltou(self):
+        """O item ja esta UPDATED, mas o extrato deu 404: nao voltou."""
+        self._cair_por_autorizacao()
+
+        self.rodar(
+            ClienteQueQuebraNoExtrato(
+                FalhaDaPluggy(404, "A Pluggy não achou o item ou a conta (Item ID errado?).")
+            )
+        )
+
+        self.assertEqual(self.conexao.estado, ConexaoPluggy.Estado.COM_ERRO)
+        self.assertEqual(mail.outbox, [])
+
+    def test_falha_solta_nao_apaga_o_motivo_da_queda(self):
+        self._cair_por_autorizacao()
+
+        self.rodar(
+            ClienteQueQuebraNoExtrato(
+                FalhaDaPluggy(None, "A Pluggy não respondeu."), status="LOGIN_ERROR"
+            )
+        )
+
+        self.assertEqual(self.conexao.estado, ConexaoPluggy.Estado.COM_ERRO)
+        self.assertEqual(self.conexao.ultimo_erro, busca.MOTIVO_AUTORIZACAO)
+
+    def test_busca_nao_religa_conexao_desligada_no_meio_do_caminho(self):
+        """A busca leu a conexao ativa; antes de rodar, o dono a desligou."""
+        lida_antes = ConexaoPluggy.objects.get(pk=self.conexao.pk)
+        ConexaoPluggy.objects.filter(pk=self.conexao.pk).update(
+            estado=ConexaoPluggy.Estado.DESLIGADA
+        )
+        cliente = ClienteFalso(transacoes=[transacao("t1")])
+
+        resultado = busca.buscar_conexao(lida_antes, agora=AGORA, cliente=cliente)
+
+        self.conexao.refresh_from_db()
+        self.assertEqual(self.conexao.estado, ConexaoPluggy.Estado.DESLIGADA)
+        self.assertEqual(resultado.estado_depois, ConexaoPluggy.Estado.DESLIGADA)
+        self.assertEqual(cliente.pedidos, [])
+        self.assertEqual(TransacaoBancaria.objects.count(), 0)
+        self.assertIsNone(self.conexao.ultima_busca_ok_em)
+        self.assertEqual(mail.outbox, [])
+
+    def test_busca_nao_desfaz_o_que_o_dono_mudou_durante_ela(self):
+        pk = self.conexao.pk
+
+        class ClienteComMudancaNoMeio(ClienteFalso):
+            def transacoes(self, account_id, de, ate):
+                ConexaoPluggy.objects.filter(pk=pk).update(
+                    email="novo@b.c", item_ids="item1,item2"
+                )
+                return super().transacoes(account_id, de, ate)
+
+        self.rodar(ClienteComMudancaNoMeio())
+
+        self.assertEqual(self.conexao.email, "novo@b.c")
+        self.assertEqual(self.conexao.item_ids, "item1,item2")
+        self.assertEqual(self.conexao.ultima_busca_ok_em, AGORA)

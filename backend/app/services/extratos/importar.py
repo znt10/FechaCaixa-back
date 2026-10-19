@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from django.db import transaction
 
-from app.models import ImportacaoDeExtrato, TransacaoBancaria
+from app.models import ContaBancaria, ImportacaoDeExtrato, TransacaoBancaria
 
 from .categorias import garantir_categorias_de_movimento
 from .classificar import aplicar_regras, marcar_entradas_como_venda, parear_transferencias
@@ -95,6 +95,18 @@ def conferir_a_conta(conta_bancaria, conta_no_arquivo):
     )
 
 
+def travar_a_conta_bancaria(conta_bancaria):
+    """Um extrato por vez em cada conta bancaria, ate o fim da transacao.
+
+    O upload do OFX e a gravacao da API leem as candidatas a adotar antes de
+    gravar; rodando juntos na mesma conta, nenhum veria a linha do outro, e a
+    transacao entraria duas vezes para sempre. Chamar logo no comeco do bloco
+    atomico. No sqlite (testes) o SELECT ... FOR UPDATE nao existe e isto nao
+    trava nada.
+    """
+    ContaBancaria.objects.select_for_update().get(pk=conta_bancaria.pk)
+
+
 def ler_arquivo(nome_do_arquivo, conteudo):
     """O ExtratoLido, escolhendo o leitor pelo conteudo e nao so pelo nome.
 
@@ -121,6 +133,7 @@ def importar_extrato(conta_bancaria, nome_do_arquivo, conteudo, usuario=None):
     deu as linhas antigas nao pode se perder porque o periodo foi subido de
     novo.
     """
+    travar_a_conta_bancaria(conta_bancaria)
     if not conta_bancaria.ativo:
         raise RecusaDeExtrato(
             "Esta conta bancária está desativada. Ative a conta antes de "

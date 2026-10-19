@@ -191,6 +191,8 @@ services:
       PLUGGY_CHAVE_CIFRA: ${PLUGGY_CHAVE_CIFRA:-}
       PLUGGY_EMAIL_AVISO: ${PLUGGY_EMAIL_AVISO:-}
       MENSALIDADE_EMAIL_AVISO: ${MENSALIDADE_EMAIL_AVISO:-}
+      # O link dos e-mails para a tela da Pluggy; sem ela, iria para localhost.
+      FRONTEND_URL: ${FRONTEND_URL:?defina FRONTEND_URL}
 
 volumes:
   mysql_data:
