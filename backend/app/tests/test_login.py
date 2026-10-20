@@ -46,6 +46,20 @@ class LoginTests(APITestCase):
         self.assertEqual(resposta.data["user"]["group"], "Gerente")
         self.assertEqual(resposta.data["user"]["first_name"], "Zeca")
 
+    def test_o_dono_da_plataforma_entra_como_plataforma(self):
+        """O superusuario e o dono do FechaCaixa, e nao o Admin de uma empresa:
+        ele nao fecha caixa, so administra as empresas. Com cargo proprio, a
+        tela o leva direto para a Plataforma e esconde o resto."""
+        User.objects.create_superuser(
+            username="dono@x.com", email="dono@x.com", password=self.SENHA
+        )
+
+        resposta = self._entrar("dono@x.com", self.SENHA)
+
+        self.assertEqual(resposta.status_code, 200, getattr(resposta, "data", None))
+        self.assertEqual(resposta.data["user"]["group"], "Plataforma")
+        self.assertEqual(resposta.cookies["role"].value, "Plataforma")
+
     def test_os_tokens_vao_no_cookie_e_nao_no_corpo(self):
         """O JavaScript nunca ve o token: e o que segura um XSS."""
         resposta = self._entrar("ger@x.com", self.SENHA)

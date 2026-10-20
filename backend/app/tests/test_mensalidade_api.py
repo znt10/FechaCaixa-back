@@ -94,4 +94,5 @@ class MinhaMensalidadeTests(TestCase):
     def test_me_diz_quem_e_superuser(self):
         dono = User.objects.create_superuser(username="dono", password="x")
         self.assertIs(self.entrar(dono).get("/api/v1/user/me/").data["super"], True)
+        self.assertEqual(self.entrar(dono).get("/api/v1/user/me/").data["group"], "Plataforma")
         self.assertIs(self.api.get("/api/v1/user/me/").data["super"], False)

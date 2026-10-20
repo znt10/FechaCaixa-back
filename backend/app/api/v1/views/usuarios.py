@@ -17,10 +17,10 @@ from app.notifications.tasks import (
 from app.notifications.tokens import validar_token_senha
 from app.permissions import (
     get_conta_do_usuario,
-    get_user_group_name,
     is_admin,
     is_gerente,
     is_gerente_ou_admin,
+    papel_na_tela,
 )
 from ..serializers import UsuarioSerializer
 from ..throttles import RegistroRateThrottle, SenhaRateThrottle
@@ -92,7 +92,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             "id": request.user.id,
             "first_name": request.user.first_name,
             "email": request.user.email,
-            "group": get_user_group_name(request.user),
+            "group": papel_na_tela(request.user),
             # A tela Plataforma e so do dono da plataforma: o cargo "Admin"
             # tambem existe dentro das empresas, e nao basta para decidir.
             "super": request.user.is_superuser,

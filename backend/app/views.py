@@ -17,7 +17,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
 
-from app.permissions import get_user_group_name
+from app.permissions import get_user_group_name, papel_na_tela  # noqa: F401 (reexportado; ver test_permissoes)
 
 User = get_user_model()
 
@@ -88,7 +88,7 @@ class LoginView(APIView):
 
         refresh = RefreshToken.for_user(user)
         access = refresh.access_token
-        role = get_user_group_name(user)
+        role = papel_na_tela(user)
 
         if role is None:
             return Response(

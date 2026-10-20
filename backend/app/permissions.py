@@ -107,6 +107,25 @@ def get_user_group_name(user):
     return group.name if group else None
 
 
+PAPEL_DA_PLATAFORMA = "Plataforma"
+
+
+def papel_na_tela(user):
+    """O cargo que a tela usa para decidir menu e rotas.
+
+    Igual a get_user_group_name, menos para o superusuario: ele e o dono do
+    FechaCaixa, e nao o Admin de uma empresa. Nao fecha caixa nem ve despesa —
+    so administra as empresas na tela Plataforma. Com o cargo "Admin" ele caia
+    no painel de caixa de todas as empresas, que nao e trabalho dele.
+
+    Fica fora de get_user_group_name de proposito: quem decide permissao no
+    backend continua olhando is_superuser e os grupos, e nao este nome.
+    """
+    if user.is_superuser:
+        return PAPEL_DA_PLATAFORMA
+    return get_user_group_name(user)
+
+
 class IsGerenteOrAdministrador(BasePermission):
     """Rotas exclusivas da gerencia (ex: relatorio global de pedidos)."""
 
