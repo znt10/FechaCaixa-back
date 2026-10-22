@@ -60,7 +60,9 @@ TURNOS = dict(FechamentoCaixa.Periodo.choices)
 
 # As abas na ordem do arquivo. O nome e o que a tela manda em ?abas= e tambem o
 # do metodo que escreve a aba (`_entradas`, `_saidas`...).
-ABAS = ("entradas", "saidas", "consumo_por_pessoa", "consumo", "desperdicio")
+ABAS = (
+    "entradas", "saidas", "consumo_por_pessoa", "consumo", "desperdicio", "vendas",
+)
 
 
 def _alfabetica(nome):
@@ -183,7 +185,7 @@ class PlanilhaDoPeriodoView(APIView):
             .select_related("loja__conta")
             .prefetch_related(
                 "retiradas__responsavel", "consumos__encarregado", "despesas",
-                "desperdicios__salgado__categoria",
+                "desperdicios__salgado__categoria", "vendas__salgado__categoria",
             )
             .order_by("data", "loja__nome_loja", "periodo")
         )
@@ -441,9 +443,17 @@ class PlanilhaDoPeriodoView(APIView):
         Por isso a coluna Quantidade e INTEIRO e nunca DINHEIRO: o formato e o
         que avisa o olho de que aquilo nao e R$.
         """
+        self._por_item(planilha, "Desperdício", fechamentos, "desperdicios")
+
+    def _vendas(self, planilha, fechamentos):
+        """Quantos de cada item a loja vendeu. Quantidade e nao R$, pelo mesmo
+        motivo do desperdicio: o catalogo nao tem preco."""
+        self._por_item(planilha, "Vendas", fechamentos, "vendas")
+
+    def _por_item(self, planilha, titulo, fechamentos, relacao):
         folha = _aba(
             planilha,
-            "Desperdício",
+            titulo,
             [
                 ("Data", 12), ("Loja", 22), ("Turno", 10), ("Categoria", 18),
                 ("Item", 26), ("Quantidade", 13), ("Quem lançou", 24),
@@ -452,7 +462,7 @@ class PlanilhaDoPeriodoView(APIView):
         linhas = []
         for f in fechamentos:
             for perda in sorted(
-                f.desperdicios.all(), key=lambda d: d.salgado.nome
+                getattr(f, relacao).all(), key=lambda d: d.salgado.nome
             ):
                 if perda.quantidade <= 0:
                     continue

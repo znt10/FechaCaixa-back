@@ -162,6 +162,7 @@ class ContaAdmin(admin.ModelAdmin):
         'pergunta_devolucao',
         'pergunta_consumo',
         'catalogo_ativo',
+        'vendas_ativas',
         'nome_dos_itens',
     )
 
@@ -258,8 +259,8 @@ class NotaFiscalAdmin(admin.ModelAdmin):
 # indistinguiveis na tela.
 @admin.register(CategoriaDeSalgado)
 class CategoriaDeSalgadoAdmin(admin.ModelAdmin):
-    list_display = ("nome", "conta", "ordem", "ativo")
-    list_filter = ("conta", "ativo")
+    list_display = ("nome", "conta", "ordem", "ativo", "conta_vendas")
+    list_filter = ("conta", "ativo", "conta_vendas")
     # search_fields e o que faz o autocomplete de `categoria` no Salgado
     # funcionar.
     search_fields = ("nome",)
