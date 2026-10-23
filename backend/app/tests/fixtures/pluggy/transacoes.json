@@ -1,0 +1,268 @@
+{
+  "saida_pix": {
+    "id": "tx-saida",
+    "accountId": "conta-0001",
+    "date": "2026-10-18T15:20:17.066Z",
+    "description": "Transferência enviada pelo Pix|Fulana de Tal",
+    "descriptionRaw": null,
+    "amount": -7,
+    "amountInAccountCurrency": null,
+    "balance": 1000.0,
+    "currencyCode": "BRL",
+    "type": "DEBIT",
+    "status": "POSTED",
+    "category": "Transfer - PIX",
+    "categoryId": "05100000",
+    "createdAt": "2026-10-18T10:00:00.000Z",
+    "updatedAt": "2026-10-18T10:00:00.000Z",
+    "creditCardMetadata": null,
+    "merchant": null,
+    "operationType": "PIX",
+    "operationTypeAdditionalInfo": null,
+    "order": null,
+    "providerCode": null,
+    "providerId": null,
+    "paymentData": {
+      "paymentMethod": "PIX",
+      "payer": {
+        "name": "Padaria Exemplo Ltda",
+        "documentNumber": {
+          "type": "CNPJ",
+          "value": "12345678000199"
+        },
+        "branchNumber": "0001",
+        "accountNumber": "100200300-4",
+        "routingNumber": "260",
+        "routingNumberISPB": "18236120"
+      },
+      "receiver": {
+        "name": "Fulana de Tal",
+        "documentNumber": {
+          "type": "CPF",
+          "value": "12345678901"
+        },
+        "branchNumber": "0001",
+        "accountNumber": "106539100-5",
+        "routingNumber": "260",
+        "routingNumberISPB": "18236120"
+      },
+      "reason": null,
+      "referenceNumber": null,
+      "receiverReferenceId": null,
+      "authenticationCode": null,
+      "boletoMetadata": null
+    }
+  },
+  "entrada_pix": {
+    "id": "tx-entrada",
+    "accountId": "conta-0001",
+    "date": "2026-10-18T12:00:00.000Z",
+    "description": "Transferência recebida pelo Pix|Beltrano da Silva",
+    "descriptionRaw": null,
+    "amount": 1500,
+    "amountInAccountCurrency": null,
+    "balance": 1000.0,
+    "currencyCode": "BRL",
+    "type": "CREDIT",
+    "status": "POSTED",
+    "category": "Transfer - PIX",
+    "categoryId": "05100000",
+    "createdAt": "2026-10-18T10:00:00.000Z",
+    "updatedAt": "2026-10-18T10:00:00.000Z",
+    "creditCardMetadata": null,
+    "merchant": null,
+    "operationType": "PIX",
+    "operationTypeAdditionalInfo": null,
+    "order": null,
+    "providerCode": null,
+    "providerId": null,
+    "paymentData": {
+      "paymentMethod": "PIX",
+      "payer": {
+        "name": "Beltrano da Silva",
+        "documentNumber": {
+          "type": "CPF",
+          "value": "98765432100"
+        },
+        "branchNumber": "0001",
+        "accountNumber": "55512-3",
+        "routingNumber": "260",
+        "routingNumberISPB": "18236120"
+      },
+      "receiver": {
+        "name": "Padaria Exemplo Ltda",
+        "documentNumber": {
+          "type": "CNPJ",
+          "value": "12345678000199"
+        },
+        "branchNumber": "0001",
+        "accountNumber": "100200300-4",
+        "routingNumber": "260",
+        "routingNumberISPB": "18236120"
+      },
+      "reason": null,
+      "referenceNumber": null,
+      "receiverReferenceId": null,
+      "authenticationCode": null,
+      "boletoMetadata": null
+    }
+  },
+  "madrugada": {
+    "id": "tx-madrugada",
+    "accountId": "conta-0001",
+    "date": "2026-10-18T02:30:00.000Z",
+    "description": "Transferência enviada pelo Pix|Ciclano Souza",
+    "descriptionRaw": null,
+    "amount": -42.5,
+    "amountInAccountCurrency": null,
+    "balance": 1000.0,
+    "currencyCode": "BRL",
+    "type": "DEBIT",
+    "status": "POSTED",
+    "category": "Transfer - PIX",
+    "categoryId": "05100000",
+    "createdAt": "2026-10-18T10:00:00.000Z",
+    "updatedAt": "2026-10-18T10:00:00.000Z",
+    "creditCardMetadata": null,
+    "merchant": null,
+    "operationType": "PIX",
+    "operationTypeAdditionalInfo": null,
+    "order": null,
+    "providerCode": null,
+    "providerId": null,
+    "paymentData": {
+      "paymentMethod": "PIX",
+      "payer": {
+        "name": "Padaria Exemplo Ltda",
+        "documentNumber": {
+          "type": "CNPJ",
+          "value": "12345678000199"
+        },
+        "branchNumber": "0001",
+        "accountNumber": "100200300-4",
+        "routingNumber": "260",
+        "routingNumberISPB": "18236120"
+      },
+      "receiver": {
+        "name": "Ciclano Souza",
+        "documentNumber": {
+          "type": "CPF",
+          "value": "11122233344"
+        },
+        "branchNumber": "0001",
+        "accountNumber": "777-8",
+        "routingNumber": "260",
+        "routingNumberISPB": "18236120"
+      },
+      "reason": null,
+      "referenceNumber": null,
+      "receiverReferenceId": null,
+      "authenticationCode": null,
+      "boletoMetadata": null
+    }
+  },
+  "pendente": {
+    "id": "tx-pendente",
+    "accountId": "conta-0001",
+    "date": "2026-10-18T13:00:00.000Z",
+    "description": "Compra no débito",
+    "descriptionRaw": null,
+    "amount": -20,
+    "amountInAccountCurrency": null,
+    "balance": 1000.0,
+    "currencyCode": "BRL",
+    "type": "DEBIT",
+    "status": "PENDING",
+    "category": "Transfer - PIX",
+    "categoryId": "05100000",
+    "createdAt": "2026-10-18T10:00:00.000Z",
+    "updatedAt": "2026-10-18T10:00:00.000Z",
+    "creditCardMetadata": null,
+    "merchant": null,
+    "operationType": "PIX",
+    "operationTypeAdditionalInfo": null,
+    "order": null,
+    "providerCode": null,
+    "providerId": null,
+    "paymentData": null
+  },
+  "sem_pagamento": {
+    "id": "tx-sem-pagamento",
+    "accountId": "conta-0001",
+    "date": "2026-10-17T14:00:00.000Z",
+    "description": "Tarifa mensal",
+    "descriptionRaw": null,
+    "amount": -19.9,
+    "amountInAccountCurrency": null,
+    "balance": 1000.0,
+    "currencyCode": "BRL",
+    "type": "DEBIT",
+    "status": "POSTED",
+    "category": "Transfer - PIX",
+    "categoryId": "05100000",
+    "createdAt": "2026-10-18T10:00:00.000Z",
+    "updatedAt": "2026-10-18T10:00:00.000Z",
+    "creditCardMetadata": null,
+    "merchant": null,
+    "operationType": "PIX",
+    "operationTypeAdditionalInfo": null,
+    "order": null,
+    "providerCode": null,
+    "providerId": null,
+    "paymentData": null
+  },
+  "centavos": {
+    "id": "tx-centavos",
+    "accountId": "conta-0001",
+    "date": "2026-10-16T18:45:00.000Z",
+    "description": "Transferência enviada pelo Pix|Fornecedor Exemplo SA",
+    "descriptionRaw": null,
+    "amount": -510.11,
+    "amountInAccountCurrency": null,
+    "balance": 1000.0,
+    "currencyCode": "BRL",
+    "type": "DEBIT",
+    "status": "POSTED",
+    "category": "Transfer - PIX",
+    "categoryId": "05100000",
+    "createdAt": "2026-10-18T10:00:00.000Z",
+    "updatedAt": "2026-10-18T10:00:00.000Z",
+    "creditCardMetadata": null,
+    "merchant": null,
+    "operationType": "PIX",
+    "operationTypeAdditionalInfo": null,
+    "order": null,
+    "providerCode": null,
+    "providerId": null,
+    "paymentData": {
+      "paymentMethod": "PIX",
+      "payer": {
+        "name": "Padaria Exemplo Ltda",
+        "documentNumber": {
+          "type": "CNPJ",
+          "value": "12345678000199"
+        },
+        "branchNumber": "0001",
+        "accountNumber": "100200300-4",
+        "routingNumber": "260",
+        "routingNumberISPB": "18236120"
+      },
+      "receiver": {
+        "name": "Fornecedor Exemplo SA",
+        "documentNumber": {
+          "type": "CNPJ",
+          "value": "99888777000155"
+        },
+        "branchNumber": "0001",
+        "accountNumber": "9988-1",
+        "routingNumber": "260",
+        "routingNumberISPB": "18236120"
+      },
+      "reason": null,
+      "referenceNumber": null,
+      "receiverReferenceId": null,
+      "authenticationCode": null,
+      "boletoMetadata": null
+    }
+  }
+}

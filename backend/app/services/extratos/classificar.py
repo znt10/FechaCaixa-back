@@ -87,9 +87,12 @@ def _conta_citada(transacao, contas):
     O Nubank escreve o destino do Pix na descricao — "Jose ... - PICPAY (0380)
     Agencia: 1 Conta: 106539100-5" —, e quando esse numero e de uma conta
     cadastrada da empresa, nao ha duvida: e transferencia entre lojas, mesmo
-    que o valor se repita no dia.
+    que o valor se repita no dia. A Pluggy traz essa conta num campo proprio
+    (`contraparte_conta`), que conta como numero citado do mesmo jeito.
     """
     numeros = [_digitos(numero) for numero in _NUMERO.findall(transacao.descricao or "")]
+    if contraparte := _digitos(transacao.contraparte_conta):
+        numeros.append(contraparte)
     for conta_id, digitos in contas:
         if conta_id == transacao.conta_bancaria_id:
             continue

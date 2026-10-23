@@ -328,6 +328,30 @@ class PareamentoEntreLojasTests(TestCase):
             self.assertPareadas(saida, saida.par)
             self.assertEqual(saida.par.data, saida.data)
 
+    def test_conta_da_contraparte_pareia_mesmo_com_valor_repetido(self):
+        """A Pluggy traz a conta do destino num campo proprio: a descricao nao
+        precisa citar o numero. Duas entradas de 100 no dia, e a saida casa com
+        uma delas pela conta da contraparte."""
+        from app.services.extratos.classificar import parear_transferencias
+
+        dia = datetime.date(2026, 9, 19)
+        conta = self.loja_a.conta
+
+        def criar(banco, chave, valor, contraparte=""):
+            return TransacaoBancaria.objects.create(
+                conta=conta, conta_bancaria=banco, data=dia, valor=Decimal(valor),
+                descricao="Transferencia Pix", chave=chave, contraparte_conta=contraparte,
+            )
+
+        saida = criar(self.banco_a, "a1", "-100.00", contraparte="222222")
+        entrada = criar(self.banco_b, "b1", "100.00")
+        criar(self.banco_b, "b2", "100.00")
+
+        self.assertEqual(parear_transferencias(conta, dia, dia), 1)
+        saida.refresh_from_db()
+        entrada.refresh_from_db()
+        self.assertPareadas(saida, entrada)
+
     def test_conta_citada_desempata_com_um_pix_para_fora(self):
         """10 para a Loja B e 10 para a Verlandia no mesmo dia, uma entrada de
         10 na B: so o da B e a outra ponta."""
@@ -693,6 +717,40 @@ class ApiDoBancoTests(CenarioDoBanco):
         importar_extrato(self.banco_a, "a.ofx", ofx([("20261001", "3.00", "Y")], conta="11111-1"))
         item = self.api.get("/api/v1/transacoes-bancarias/").data["results"][0]
         self.assertTrue(item["automatica"])
+
+    def test_resumo_traz_o_fluxo_de_cada_dia(self):
+        """O grafico do fluxo de caixa: entrou e saiu por dia, sem a transferencia
+        entre lojas no consolidado (o mesmo dinheiro contado duas vezes)."""
+        importar_extrato(
+            self.banco_a,
+            "a.ofx",
+            ofx(
+                [("20261002", "-500.00", "PIX LOJA B"), ("20261002", "80.00", "VENDA"),
+                 ("20261004", "-30.00", "MERCADO")],
+                conta="11111-1",
+            ),
+        )
+        importar_extrato(
+            self.banco_b, "b.ofx", ofx([("20261002", "500.00", "PIX LOJA A")], conta="22222-2")
+        )
+
+        consolidado = self.api.get("/api/v1/transacoes-bancarias/resumo/").data
+        so_a = self.api.get(f"/api/v1/transacoes-bancarias/resumo/?loja={self.loja_a.public_id}").data
+
+        self.assertEqual(
+            consolidado["por_dia"],
+            [
+                {"data": "2026-10-02", "entradas": "80.00", "saidas": "0.00"},
+                {"data": "2026-10-04", "entradas": "0.00", "saidas": "-30.00"},
+            ],
+        )
+        self.assertEqual(
+            so_a["por_dia"],
+            [
+                {"data": "2026-10-02", "entradas": "80.00", "saidas": "-500.00"},
+                {"data": "2026-10-04", "entradas": "0.00", "saidas": "-30.00"},
+            ],
+        )
 
     def test_resumo_conta_o_que_falta_classificar(self):
         importar_extrato(

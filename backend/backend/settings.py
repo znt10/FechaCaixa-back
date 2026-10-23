@@ -282,6 +282,13 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 # nao depende dele.
 MENSALIDADE_VALOR_PADRAO = Decimal(os.getenv("MENSALIDADE_VALOR_PADRAO", "100.00"))
 MENSALIDADE_EMAIL_AVISO = os.getenv("MENSALIDADE_EMAIL_AVISO", "")
+
+# ─── Pluggy ───────────────────────────────────────────────────────────────────
+# Chave Fernet que cifra o Client Secret da Pluggy no banco. Sem ela o segredo
+# nao pode ser salvo. PLUGGY_EMAIL_AVISO recebe os avisos de conexao; vazia,
+# usa MENSALIDADE_EMAIL_AVISO.
+PLUGGY_CHAVE_CIFRA = os.getenv("PLUGGY_CHAVE_CIFRA", "")
+PLUGGY_EMAIL_AVISO = os.getenv("PLUGGY_EMAIL_AVISO", "")
 PIX_CHAVE = os.getenv("PIX_CHAVE", "")
 PIX_NOME_RECEBEDOR = os.getenv("PIX_NOME_RECEBEDOR", "")
 PIX_CIDADE = os.getenv("PIX_CIDADE", "")

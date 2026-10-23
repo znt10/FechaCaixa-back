@@ -5,7 +5,8 @@ upload hoje e a busca diaria na API do banco amanha.
 
 A regra central mora aqui: subir de novo um periodo que ja entrou so
 acrescenta o que e novo. O PicPay so exporta de 30 em 30 dias, entao o arquivo
-de cada sabado repete o comeco do mes — e nada pode entrar duas vezes.
+de cada sabado repete o comeco do mes — e nada pode entrar duas vezes. Nem o
+que a API do banco ja gravou: a linha do arquivo adota a dela (ver api.py).
 """
 
 import hashlib
@@ -14,7 +15,7 @@ from dataclasses import dataclass
 
 from django.db import transaction
 
-from app.models import ImportacaoDeExtrato, TransacaoBancaria
+from app.models import ContaBancaria, ImportacaoDeExtrato, TransacaoBancaria
 
 from .categorias import garantir_categorias_de_movimento
 from .classificar import aplicar_regras, marcar_entradas_como_venda, parear_transferencias
@@ -25,7 +26,8 @@ from .ofx import decodificar, ler_ofx
 
 @dataclass
 class ResultadoDaImportacao:
-    importacao: ImportacaoDeExtrato
+    # None quando a API nao trouxe linha nova: so o arquivo cria sempre.
+    importacao: ImportacaoDeExtrato | None
     novas: int
     repetidas: int
     pareadas: int
@@ -33,6 +35,9 @@ class ResultadoDaImportacao:
     # Entradas que viraram venda sozinhas: contadas a parte, porque
     # "classificadas" e o que a gerente ja tinha respondido.
     vendas: int = 0
+    # Das repetidas, as que ja estavam no extrato pela outra fonte (API ou
+    # arquivo) e ganharam aqui a identidade desta.
+    adotadas: int = 0
 
 
 def chaves_das_linhas(linhas):
@@ -90,6 +95,18 @@ def conferir_a_conta(conta_bancaria, conta_no_arquivo):
     )
 
 
+def travar_a_conta_bancaria(conta_bancaria):
+    """Um extrato por vez em cada conta bancaria, ate o fim da transacao.
+
+    O upload do OFX e a gravacao da API leem as candidatas a adotar antes de
+    gravar; rodando juntos na mesma conta, nenhum veria a linha do outro, e a
+    transacao entraria duas vezes para sempre. Chamar logo no comeco do bloco
+    atomico. No sqlite (testes) o SELECT ... FOR UPDATE nao existe e isto nao
+    trava nada.
+    """
+    ContaBancaria.objects.select_for_update().get(pk=conta_bancaria.pk)
+
+
 def ler_arquivo(nome_do_arquivo, conteudo):
     """O ExtratoLido, escolhendo o leitor pelo conteudo e nao so pelo nome.
 
@@ -116,6 +133,7 @@ def importar_extrato(conta_bancaria, nome_do_arquivo, conteudo, usuario=None):
     deu as linhas antigas nao pode se perder porque o periodo foi subido de
     novo.
     """
+    travar_a_conta_bancaria(conta_bancaria)
     if not conta_bancaria.ativo:
         raise RecusaDeExtrato(
             "Esta conta bancária está desativada. Ative a conta antes de "
@@ -126,11 +144,20 @@ def importar_extrato(conta_bancaria, nome_do_arquivo, conteudo, usuario=None):
     conferir_a_conta(conta_bancaria, extrato.conta_no_arquivo)
 
     chaves = chaves_das_linhas(extrato.linhas)
+    # A chave pode estar em `chave`, na linha que nasceu de arquivo, ou em
+    # `chave_do_arquivo`, na linha que nasceu da API e um arquivo ja adotou.
+    da_conta = TransacaoBancaria.objects.filter(conta_bancaria=conta_bancaria)
     ja_existem = set(
-        TransacaoBancaria.objects.filter(
-            conta_bancaria=conta_bancaria, chave__in=chaves
-        ).values_list("chave", flat=True)
+        da_conta.filter(chave__in=chaves).values_list("chave", flat=True)
+    ) | set(
+        da_conta.filter(chave_do_arquivo__in=chaves).values_list("chave_do_arquivo", flat=True)
     )
+    a_gravar = [
+        (linha, chave)
+        for linha, chave in zip(extrato.linhas, chaves)
+        if chave not in ja_existem
+    ]
+    adotadas = adotar_linhas_da_api(conta_bancaria, a_gravar)
 
     conta = conta_bancaria.loja.conta
     # A mesma decodificacao do leitor: um OFX em UTF-8 com acento guardado
@@ -157,34 +184,15 @@ def importar_extrato(conta_bancaria, nome_do_arquivo, conteudo, usuario=None):
             chave=chave,
             assinatura=assinatura_da_descricao(linha.descricao),
         )
-        for linha, chave in zip(extrato.linhas, chaves)
-        if chave not in ja_existem
+        for linha, chave in a_gravar
+        if chave not in adotadas
     ]
     TransacaoBancaria.objects.bulk_create(novas)
 
-    # Antes do pareamento: ele cria a categoria de entre lojas, e com uma
-    # categoria ja existindo a semeadura das outras (Vendas inclusa) nao
-    # aconteceria mais.
-    garantir_categorias_de_movimento(conta)
-    pareadas = classificadas = 0
-    if novas:
-        datas = [transacao.data for transacao in novas]
-        pareadas = parear_transferencias(conta, min(datas), max(datas))
-        # Relidas do banco e nao as da lista: no MySQL o bulk_create nao
-        # devolve o id, e o pareamento acabou de mudar algumas delas.
-        classificadas = aplicar_regras(
-            conta, list(TransacaoBancaria.objects.filter(importacao=importacao))
-        )
-    # Por ultimo, e fora do `if novas`: toda entrada ainda pendente da conta,
-    # e nao so as deste arquivo. O extrato subido antes desta regra deixou as
-    # entradas esperando, e subir o mesmo arquivo de novo e o que as resolve.
-    vendas = marcar_entradas_como_venda(
-        conta,
-        list(
-            TransacaoBancaria.objects.filter(
-                conta_bancaria=conta_bancaria, tipo__isnull=True, par__isnull=True, valor__gt=0
-            )
-        ),
+    # Relidas do banco e nao as da lista: no MySQL o bulk_create nao devolve
+    # o id.
+    pareadas, classificadas, vendas = classificar_o_que_entrou(
+        conta_bancaria, list(TransacaoBancaria.objects.filter(importacao=importacao))
     )
 
     importacao.novas = len(novas)
@@ -198,4 +206,79 @@ def importar_extrato(conta_bancaria, nome_do_arquivo, conteudo, usuario=None):
         pareadas=pareadas,
         classificadas=classificadas,
         vendas=vendas,
+        adotadas=len(adotadas),
     )
+
+
+def adotar_linhas_da_api(conta_bancaria, linhas_e_chaves):
+    """As linhas do arquivo que a API ja gravou. Devolve as chaves adotadas.
+
+    A candidata e a linha que nasceu da API e ainda nao tem par de arquivo, do
+    mesmo dia e valor; quem fica com qual decide `escolher_adotadas`. Adotar e
+    so guardar a chave do arquivo nela, para o proximo arquivo com a mesma
+    linha tambem a achar; o resto fica como a API gravou.
+    """
+    # Aqui e nao no topo: api.py importa deste modulo.
+    from .api import PREFIXO_DA_CHAVE, escolher_adotadas, mesma_contraparte
+
+    linhas = [linha for linha, _ in linhas_e_chaves]
+    escolhidas = escolher_adotadas(
+        linhas,
+        TransacaoBancaria.objects.filter(
+            conta_bancaria=conta_bancaria,
+            id_externo__isnull=False,
+            chave_do_arquivo__isnull=True,
+            # Nascida da API. A linha que nasceu de arquivo e a API adotou
+            # tambem tem id e nenhuma chave_do_arquivo, mas a impressao digital
+            # do arquivo dela ja esta em `chave`: casar outra linha de arquivo
+            # com ela deixaria uma linha da API livre para engolir um Pix novo.
+            chave__startswith=PREFIXO_DA_CHAVE,
+            data__in={linha.data for linha in linhas},
+        ),
+        lambda linha, candidata: mesma_contraparte(
+            linha.descricao, candidata.contraparte_nome, candidata.contraparte_documento
+        ),
+    )
+    adotadas = []
+    for (_, chave), transacao in zip(linhas_e_chaves, escolhidas):
+        if transacao is not None:
+            transacao.chave_do_arquivo = chave
+            adotadas.append(transacao)
+    TransacaoBancaria.objects.bulk_update(adotadas, ["chave_do_arquivo"])
+    return {transacao.chave_do_arquivo for transacao in adotadas}
+
+
+def classificar_o_que_entrou(conta_bancaria, transacoes):
+    """Pareia, aplica as regras e marca as vendas. Devolve as tres contagens.
+
+    `transacoes` e o que acabou de entrar no extrato, relido do banco: as
+    linhas novas do arquivo, ou as novas e as adotadas da API — a linha do
+    arquivo que ganha a contraparte pela API pode parear agora.
+    """
+    conta = conta_bancaria.loja.conta
+    # Antes do pareamento: ele cria a categoria de entre lojas, e com uma
+    # categoria ja existindo a semeadura das outras (Vendas inclusa) nao
+    # aconteceria mais.
+    garantir_categorias_de_movimento(conta)
+    pareadas = classificadas = 0
+    if transacoes:
+        datas = [transacao.data for transacao in transacoes]
+        pareadas = parear_transferencias(conta, min(datas), max(datas))
+        # Relidas de novo: o pareamento acabou de mudar algumas delas.
+        classificadas = aplicar_regras(
+            conta,
+            list(TransacaoBancaria.objects.filter(pk__in=[t.pk for t in transacoes])),
+        )
+    # Por ultimo, e fora do `if transacoes`: toda entrada ainda pendente da
+    # conta, e nao so as que entraram agora. O extrato subido antes desta regra
+    # deixou as entradas esperando, e subir o mesmo arquivo de novo e o que as
+    # resolve.
+    vendas = marcar_entradas_como_venda(
+        conta,
+        list(
+            TransacaoBancaria.objects.filter(
+                conta_bancaria=conta_bancaria, tipo__isnull=True, par__isnull=True, valor__gt=0
+            )
+        ),
+    )
+    return pareadas, classificadas, vendas

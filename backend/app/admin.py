@@ -8,6 +8,7 @@ from .models import (
     CategoriaDeSalgado,
     Conta,
     ContaBancaria,
+    ConexaoPluggy,
     ImportacaoDeExtrato,
     RegraDeClassificacao,
     TransacaoBancaria,
@@ -334,6 +335,28 @@ class ContaBancariaAdmin(admin.ModelAdmin):
     list_select_related = ("loja",)
 
 
+# So leitura e sem o segredo: a conexao se configura pela tela Plataforma.
+@admin.register(ConexaoPluggy)
+class ConexaoPluggyAdmin(admin.ModelAdmin):
+    list_display = ("conta", "email", "estado", "ultima_busca_ok_em", "falhas_seguidas")
+    list_filter = ("estado",)
+    fields = (
+        "conta", "email", "client_id", "segredo_salvo_em", "item_ids", "estado",
+        "conectada_em", "ultima_busca_ok_em", "ultimo_erro", "falhas_seguidas",
+        "itens",
+    )
+    readonly_fields = fields
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(CategoriaDeMovimento)
 class CategoriaDeMovimentoAdmin(admin.ModelAdmin):
     list_display = ("nome", "tipo", "conta", "entre_lojas", "ativo")
@@ -361,7 +384,9 @@ class TransacaoBancariaAdmin(admin.ModelAdmin):
     list_select_related = ("conta_bancaria__loja",)
     readonly_fields = (
         "conta", "conta_bancaria", "importacao", "data", "valor", "descricao",
-        "id_do_banco", "chave", "assinatura", "par",
+        "id_do_banco", "chave", "assinatura", "par", "id_externo",
+        "chave_do_arquivo", "contraparte_nome", "contraparte_documento",
+        "contraparte_conta",
     )
 
 
