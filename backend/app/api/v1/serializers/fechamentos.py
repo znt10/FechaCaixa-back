@@ -23,6 +23,7 @@ from app.models import (
     ResponsavelRetirada,
     Retirada,
     Salgado,
+    Venda,
 )
 from app.permissions import get_conta_do_usuario
 
@@ -248,6 +249,35 @@ class DesperdicioLidoSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class VendaDoTurnoSerializer(serializers.Serializer):
+    """Uma linha de venda dentro do envio do fechamento.
+
+    Igual ao desperdicio, com um filtro a mais: so entra item de categoria
+    marcada para contar vendas.
+    """
+
+    salgado = serializers.SlugRelatedField(
+        slug_field="public_id",
+        queryset=Salgado.objects.filter(
+            ativo=True, categoria__ativo=True, categoria__conta_vendas=True
+        ),
+        error_messages={
+            "does_not_exist": "Esse item nao esta na lista de vendas.",
+        },
+    )
+    quantidade = serializers.IntegerField()
+
+    def validate_quantidade(self, quantidade):
+        if quantidade <= 0:
+            raise serializers.ValidationError("Informe quantos foram vendidos.")
+        return quantidade
+
+
+class VendaLidaSerializer(DesperdicioLidoSerializer):
+    class Meta(DesperdicioLidoSerializer.Meta):
+        model = Venda
+
+
 def gravar_despesas(fechamento, despesas):
     """Regrava as linhas de despesa de um turno.
 
@@ -378,6 +408,20 @@ def gravar_desperdicios(fechamento, desperdicios):
     )
 
 
+def gravar_vendas(fechamento, vendas):
+    """Regrava as linhas de venda de um turno, como `gravar_desperdicios`."""
+    Venda.objects.bulk_create(
+        [
+            Venda(
+                fechamento=fechamento,
+                salgado=linha["salgado"],
+                quantidade=linha["quantidade"],
+            )
+            for linha in vendas
+        ]
+    )
+
+
 class FechamentoCaixaSerializer(serializers.ModelSerializer):
     """Leitura — usada no painel do admin/gerente."""
 
@@ -400,6 +444,7 @@ class FechamentoCaixaSerializer(serializers.ModelSerializer):
     despesas = DespesaLidaSerializer(many=True, read_only=True)
     consumos = ConsumoLidoSerializer(many=True, read_only=True)
     desperdicios = DesperdicioLidoSerializer(many=True, read_only=True)
+    vendas = VendaLidaSerializer(many=True, read_only=True)
     editado_por_nome = serializers.SerializerMethodField()
     conferido_por_nome = serializers.SerializerMethodField()
     # `recebido` sao as formas de pagamento cruas; `total` e a liquidez bruta,
@@ -430,6 +475,7 @@ class FechamentoCaixaSerializer(serializers.ModelSerializer):
             "houve_desperdicio", "desperdicio_detalhes",
             "consumos",
             "desperdicios",
+            "vendas",
             "conferido", "conferido_em", "conferido_por_nome",
             "editado_por_nome",
             "created_at",
@@ -619,6 +665,8 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
     # O que a loja perdeu no turno, item a item do catalogo. Uma linha por
     # item: a mesma logica do consumo, uma lista que pode vir vazia.
     desperdicios = DesperdicioDoTurnoSerializer(many=True, required=False)
+    # O que a loja vendeu no turno, item a item, das categorias marcadas.
+    vendas = VendaDoTurnoSerializer(many=True, required=False)
 
     # ---- formato antigo da despesa, aceito so durante a transicao ----
     # O formulario e um app separado, num deploy separado: entre o backend
@@ -646,6 +694,7 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
             "houve_desperdicio", "desperdicio_detalhes",
             "consumos",
             "desperdicios",
+            "vendas",
             "houve_despesa", "despesa_descricao", "despesa_valor",
         ]
         extra_kwargs = {"data": {"required": False}}
@@ -799,6 +848,11 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"desperdicios": "Esse item nao e do catalogo da sua empresa."}
                 )
+        for linha in data.get("vendas") or []:
+            if loja and linha["salgado"].categoria.conta_id != loja.conta_id:
+                raise serializers.ValidationError(
+                    {"vendas": "Esse item nao e do catalogo da sua empresa."}
+                )
 
         # Repor pressupoe buraco. Onde ja existe caixa lancado, um segundo
         # envio nao corrige o primeiro: os dois ficam, e o painel soma os dois
@@ -882,6 +936,7 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
         despesas = validated_data.pop("despesas", [])
         consumos = validated_data.pop("consumos", [])
         desperdicios = validated_data.pop("desperdicios", [])
+        vendas = validated_data.pop("vendas", [])
         validated_data.setdefault("data", timezone.localdate())
         self._copiar_o_nome(validated_data)
         # Um envio so: o turno com consumo de meia loja nao pode gravar pela
@@ -892,6 +947,7 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
             gravar_despesas(fechamento, despesas)
             gravar_consumos(fechamento, consumos)
             gravar_desperdicios(fechamento, desperdicios)
+            gravar_vendas(fechamento, vendas)
         return fechamento
 
     def update(self, instance, validated_data):
@@ -905,6 +961,7 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
         despesas = validated_data.pop("despesas", None)
         consumos = validated_data.pop("consumos", None)
         desperdicios = validated_data.pop("desperdicios", None)
+        vendas = validated_data.pop("vendas", None)
         self._copiar_o_nome(validated_data)
         with transaction.atomic():
             fechamento = super().update(instance, validated_data)
@@ -926,6 +983,10 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
             if desperdicios is not None:
                 fechamento.desperdicios.all().delete()
                 gravar_desperdicios(fechamento, desperdicios)
+            # Mesma distincao `None` x lista vazia do desperdicio.
+            if vendas is not None:
+                fechamento.vendas.all().delete()
+                gravar_vendas(fechamento, vendas)
         return fechamento
 
     # O que marca um dia reposto pelo painel. Vai junto do nome porque um dia
@@ -1008,6 +1069,7 @@ class FechamentoCaixaFormularioSerializer(serializers.ModelSerializer):
     lancado_por = serializers.SlugRelatedField(slug_field="public_id", read_only=True)
     consumos = ConsumoLidoSerializer(many=True, read_only=True)
     desperdicios = DesperdicioLidoSerializer(many=True, read_only=True)
+    vendas = VendaLidaSerializer(many=True, read_only=True)
 
     class Meta:
         model = FechamentoCaixa
@@ -1022,6 +1084,7 @@ class FechamentoCaixaFormularioSerializer(serializers.ModelSerializer):
             "houve_desperdicio", "desperdicio_detalhes",
             "consumos",
             "desperdicios",
+            "vendas",
             "segundos_para_corrigir",
         ]
         read_only_fields = fields
