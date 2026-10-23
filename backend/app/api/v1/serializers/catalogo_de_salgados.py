@@ -15,7 +15,7 @@ class CategoriaDeSalgadoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CategoriaDeSalgado
-        fields = ["id", "nome", "ordem", "ativo"]
+        fields = ["id", "nome", "ordem", "ativo", "conta_vendas"]
 
 
 class SalgadoSerializer(serializers.ModelSerializer):
@@ -30,7 +30,12 @@ class SalgadoSerializer(serializers.ModelSerializer):
     # quem filtra o que aparece no seletor e o front, e ele so sabe da
     # categoria com este campo.
     categoria_ativo = serializers.ReadOnlyField(source="categoria.ativo")
+    # Pelo mesmo motivo: e o front que separa o que entra no seletor de vendas.
+    categoria_conta_vendas = serializers.ReadOnlyField(source="categoria.conta_vendas")
 
     class Meta:
         model = Salgado
-        fields = ["id", "nome", "ativo", "categoria", "categoria_nome", "categoria_ativo"]
+        fields = [
+            "id", "nome", "ativo", "categoria", "categoria_nome", "categoria_ativo",
+            "categoria_conta_vendas",
+        ]

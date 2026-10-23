@@ -80,12 +80,15 @@ class PlanilhaDoPeriodoTests(APITestCase):
     def linhas(self, folha):
         return list(folha.iter_rows(min_row=2, values_only=True))
 
-    def test_as_cinco_abas_existem_e_na_ordem_de_leitura(self):
+    def test_as_seis_abas_existem_e_na_ordem_de_leitura(self):
         planilha = self.baixar(de=DIA_COMUM, ate=DIA_COMUM)
 
         self.assertEqual(
             planilha.sheetnames,
-            ["Entradas", "Saídas", "Consumo por pessoa", "Consumo", "Desperdício"],
+            [
+                "Entradas", "Saídas", "Consumo por pessoa", "Consumo",
+                "Desperdício", "Vendas",
+            ],
         )
 
     def test_as_entradas_trazem_um_turno_por_linha(self):

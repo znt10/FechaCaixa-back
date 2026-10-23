@@ -13,6 +13,7 @@ CONFIGURACAO_DO_FORMULARIO = [
     "pergunta_devolucao",
     "pergunta_consumo",
     "catalogo_ativo",
+    "vendas_ativas",
     "nome_dos_itens",
 ]
 

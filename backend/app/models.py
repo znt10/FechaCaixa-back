@@ -86,6 +86,12 @@ class Conta(BaseModel):
     # do catalogo.
     catalogo_ativo = models.BooleanField("Usa catálogo de itens", default=True)
 
+    # A contagem de vendas por item (10 bolos formigueiro, 10 de nata). Nasce
+    # desligada, ao contrario das perguntas acima: e coisa nova, e quem nao
+    # pediu nao pode amanhecer com uma secao a mais no formulario. Depende do
+    # catalogo, e so lista as categorias marcadas com `conta_vendas`.
+    vendas_ativas = models.BooleanField("Conta vendas por item", default=False)
+
     # Como a empresa chama o que vende, no plural: entra no meio de frase
     # ("Houve perda de paes?", "Catalogo de paes"). Plural so, e nao
     # singular + genero: "Houve perda de ..." dispensa o "algum/alguma".
@@ -937,6 +943,11 @@ class CategoriaDeSalgado(BaseModel):
     nome = models.CharField(max_length=60)
     ordem = models.PositiveIntegerField(default=0)
     ativo = models.BooleanField(default=True)
+    # Se os itens desta familia aparecem na contagem de vendas. Na categoria e
+    # nao no item: a loja conta os bolos e nao os salgados, e marcar "Bolos"
+    # uma vez ja inclui o bolo cadastrado amanha. O desperdicio ignora isto e
+    # continua usando o catalogo inteiro.
+    conta_vendas = models.BooleanField("Conta vendas", default=False)
 
     class Meta:
         ordering = ["ordem", "nome"]
@@ -1077,6 +1088,30 @@ class ConexaoPluggy(BaseModel):
 
         self.client_secret_cifrado = cifrar(texto)
         self.segredo_salvo_em = timezone.now()
+
+
+class Venda(BaseModel):
+    """Quantos de cada item a loja vendeu no turno.
+
+    Mesmo desenho do Desperdicio, e pelos mesmos motivos: pendurada no
+    fechamento, PROTECT no item, quantidade e nao valor. O catalogo nao tem
+    preco, entao a venda contada aqui fica FORA de qualquer soma em dinheiro —
+    o dinheiro dela ja entrou pelo PIX, cartao e dinheiro do turno.
+    """
+
+    fechamento = models.ForeignKey(
+        FechamentoCaixa, on_delete=models.CASCADE, related_name="vendas"
+    )
+    salgado = models.ForeignKey(
+        Salgado, on_delete=models.PROTECT, related_name="vendas"
+    )
+    quantidade = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ["-fechamento__data", "salgado__nome"]
+
+    def __str__(self):
+        return f"{self.salgado.nome} x{self.quantidade} - {self.fechamento.data}"
 
 
 class ContaBancaria(BaseModel):

@@ -169,6 +169,7 @@ class FechamentoCaixaViewSet(viewsets.ModelViewSet):
         "consumos__encarregado",
         "despesas",
         "desperdicios__salgado__categoria",
+        "vendas__salgado__categoria",
     )
     lookup_field = 'public_id'
     # Sem DELETE: apagar escondia o lancamento errado sem deixar rastro, e foi
