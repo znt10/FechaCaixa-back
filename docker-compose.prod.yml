@@ -199,5 +199,42 @@ services:
       # O link dos e-mails para a tela da Pluggy; sem ela, iria para localhost.
       FRONTEND_URL: ${FRONTEND_URL:?defina FRONTEND_URL}
 
+  # Confere na InfinitePay, a cada 10 min, os links da mensalidade que
+  # receberam aviso e nao confirmaram (aviso antes de o pagamento cair, ou
+  # `payment_check` fora na hora). Mesma imagem da api, sem gunicorn, como o
+  # `comprovantes`. Sem as INFINITEPAY_* ele so escreve que nao esta configurado.
+  infinitepay:
+    build: .
+    restart: unless-stopped
+    entrypoint: ["python", "manage.py", "conferir_pagamentos_infinitepay", "--a-cada", "600"]
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      SECRET_KEY: ${SECRET_KEY:?defina SECRET_KEY}
+      DEBUG: "False"
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?defina ALLOWED_HOSTS}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?defina CORS_ALLOWED_ORIGINS}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?defina CSRF_TRUSTED_ORIGINS}
+      DB_ENGINE: django.db.backends.mysql
+      DB_NAME: ${DB_NAME:-fechacaixa}
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: "3306"
+      CACHE_REDIS_URL: redis://redis:6379/0
+      # A confirmacao manda o e-mail de "pagamento confirmado" a gerencia.
+      EMAIL_HOST: ${EMAIL_HOST:-smtp.gmail.com}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-True}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-FechaCaixa <no-reply@fechacaixa.local>}
+      MENSALIDADE_EMAIL_AVISO: ${MENSALIDADE_EMAIL_AVISO:-}
+      FRONTEND_URL: ${FRONTEND_URL:?defina FRONTEND_URL}
+      INFINITEPAY_HANDLE: ${INFINITEPAY_HANDLE:-}
+      INFINITEPAY_API_KEY: ${INFINITEPAY_API_KEY:-}
+      INFINITEPAY_WEBHOOK_SEGREDO: ${INFINITEPAY_WEBHOOK_SEGREDO:-}
+
 volumes:
   mysql_data:

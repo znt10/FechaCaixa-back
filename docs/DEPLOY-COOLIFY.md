@@ -28,6 +28,14 @@ guarda os contadores do limite por IP (ver `docs/limite-por-ip.md`) e por isso
 não tem volume, e `comprovantes`, que lê a caixa do Gmail dos comprovantes a
 cada minuto (`manage.py ler_caixa_de_comprovantes --a-cada 60`).
 
+O serviço `infinitepay` confere a cada 10 minutos os links da mensalidade que
+receberam aviso de pago e ainda não confirmaram
+(`manage.py conferir_pagamentos_infinitepay --a-cada 600`). Ele só faz algo com
+`INFINITEPAY_HANDLE` (a InfiniteTag, sem o `$`) e `INFINITEPAY_WEBHOOK_SEGREDO`
+preenchidas no Environment; sem elas, a mensalidade continua no Pix estático.
+O aviso da InfinitePay chega em `FRONTEND_URL/backend/api/v1/infinitepay/retorno`
+e, sem o `?t=` certo, responde 401.
+
 Não há `worker` nem `beat`. O beat existia para uma tarefa agendada
 (`enviar_digest_lojas`) que saiu junto com o estoque na migration `0036`, e o
 worker não tinha mais nada para entregar além dela e de um e-mail. Esse e-mail

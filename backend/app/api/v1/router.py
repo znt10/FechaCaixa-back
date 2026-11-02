@@ -24,7 +24,12 @@ from .views.acesso import (
     EmpresaDoFormularioView,
     SairDoFormularioView,
 )
-from .views.mensalidade import JaPagueiView, LinkDePagamentoView, MinhaMensalidadeView
+from .views.mensalidade import (
+    InfinitePayRetornoView,
+    JaPagueiView,
+    LinkDePagamentoView,
+    MinhaMensalidadeView,
+)
 from .views.planilha import PlanilhaDoPeriodoView
 from .views.pluggy import (
     BuscarConexaoPluggyView,
@@ -139,6 +144,9 @@ urlpatterns = router.urls + [
         LinkDePagamentoView.as_view(),
         name="minha-mensalidade-link",
     ),
+    # O aviso da InfinitePay. Vem de FORA, sem login; a credencial e o `t`
+    # da query string, conferido na view.
+    path("infinitepay/retorno/", InfinitePayRetornoView.as_view(), name="infinitepay-retorno"),
     path("plataforma/pluggy/", PluggyDaPlataformaView.as_view(), name="plataforma-pluggy"),
     path(
         "plataforma/pluggy/<uuid:public_id>/",

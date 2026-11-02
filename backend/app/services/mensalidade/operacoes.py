@@ -118,7 +118,27 @@ def _travar_aguardando(pagamento):
 @transaction.atomic
 def confirmar_pagamento(pagamento, usuario, agora=None):
     agora = agora or timezone.now()
-    pagamento = _travar_aguardando(pagamento)
+    return _aplicar_confirmacao(_travar_aguardando(pagamento), usuario, agora)
+
+
+@transaction.atomic
+def confirmar_pelo_link(public_id, agora=None):
+    """O aviso da InfinitePay ja conferido pelo `payment_check`: a mesma
+    confirmacao do dono, sem ninguem no `resolvido_por`."""
+    agora = agora or timezone.now()
+    pagamento = (
+        Pagamento.objects.select_for_update()
+        .select_related("assinatura__conta")
+        .filter(public_id=public_id, origem=Pagamento.Origem.INFINITEPAY)
+        .first()
+    )
+    if pagamento is None or pagamento.status != Pagamento.Status.ABERTO:
+        raise RecusaDaMensalidade("Este pagamento já foi resolvido.")
+    return _aplicar_confirmacao(pagamento, None, agora)
+
+
+def _aplicar_confirmacao(pagamento, usuario, agora):
+    """Marca pago e avanca o `paga_ate`. Chamar com o pagamento travado."""
     assinatura = pagamento.assinatura
     # Sem o aviso na conta: e justamente ele que faria a empresa parecer
     # AGUARDANDO, e a pergunta aqui e se ela estava bloqueada pelas datas.

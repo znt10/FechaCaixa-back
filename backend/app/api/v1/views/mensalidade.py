@@ -5,7 +5,10 @@ As rotas de /minha-mensalidade/ ficam livres na trava do painel (ROTAS_LIVRES_NO
 e por elas que a empresa bloqueada paga e se destrava.
 """
 
-from rest_framework.permissions import IsAuthenticated
+import logging
+
+from django.utils import timezone
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -16,7 +19,12 @@ from app.services.mensalidade import (
     informar_pagamento,
     link_de_pagamento,
 )
+from app.services import infinitepay
+from app.services.infinitepay import ErroDaInfinitePay
+from app.services.mensalidade import infinitepay_retorno
 from app.services.mensalidade.retrato import retrato_da_mensalidade
+
+logger = logging.getLogger(__name__)
 
 
 class MinhaMensalidadeView(APIView):
@@ -69,3 +77,43 @@ class LinkDePagamentoView(_AcaoDoGerente):
 
     def acao(self, conta, usuario):
         link_de_pagamento(conta, usuario)
+
+
+class InfinitePayRetornoView(APIView):
+    """POST /api/v1/infinitepay/retorno/ — a InfinitePay avisando que um link
+    da mensalidade foi pago.
+
+    Chega pelo rewrite /backend do front (a `webhook_url` e montada assim em
+    `infinitepay.criar_link`), sem cookie e sem login: nao passa pela trava
+    da mensalidade, e e assim que a empresa bloqueada se destrava sozinha.
+
+    O aviso nao e assinado: a credencial e o `t` da query string, e mesmo com
+    ele certo nada se confirma sem o `payment_check` (ver
+    `mensalidade/infinitepay_retorno.py`). Responde 200 para o que nao vai
+    mudar nunca (corpo estranho, pagamento desconhecido) e 400 quando a
+    InfinitePay nao respondeu ao `payment_check`: e com 400 que ela manda o
+    aviso de novo.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = []
+
+    def post(self, request):
+        if not infinitepay.segredo_confere(request.query_params.get("t", "")):
+            return Response({"error": "não autorizado"}, status=401)
+        corpo = request.data if isinstance(request.data, dict) else {}
+        referencia = str(corpo.get("order_nsu") or "")
+        if not referencia:
+            return Response({"ok": True, "resultado": "ignorada"})
+        try:
+            resultado = infinitepay_retorno.processar(
+                referencia=referencia,
+                transacao=str(corpo.get("transaction_nsu") or ""),
+                slug=str(corpo.get("invoice_slug") or ""),
+                agora=timezone.now(),
+            )
+        except ErroDaInfinitePay:
+            logger.exception("[infinitepay] payment_check falhou (order_nsu=%s)", referencia)
+            return Response({"error": "tente de novo"}, status=400)
+        return Response({"ok": True, "resultado": resultado})

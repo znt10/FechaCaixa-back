@@ -1,7 +1,7 @@
-"""Os tres e-mails da mensalidade, enviados no proprio pedido.
+"""Os e-mails da mensalidade, enviados no proprio pedido.
 
 Sem tarefa agendada: cada um sai no clique de alguem ("Ja paguei",
-Confirmar, Recusar). Falha de SMTP registra no log e segue — o aviso e a
+Confirmar, Recusar) ou no aviso da InfinitePay. Falha de SMTP registra no log e segue — o aviso e a
 confirmacao ja estao gravados, e desfaze-los por um e-mail que nao saiu
 trancaria de novo quem ja pagou.
 """
@@ -109,4 +109,23 @@ def avisar_recusa(pagamento):
         corpo,
         emails_da_gerencia(conta),
         responder_para=settings.MENSALIDADE_EMAIL_AVISO,
+    )
+
+
+def avisar_pago_em_cancelado(pagamento):
+    """O link nao expira: o dono registrou o mes na mao (ou o valor mudou) e o
+    link velho ainda foi pago. Nada se confirma; o dono confere ou devolve."""
+    conta = pagamento.assinatura.conta
+    corpo = (
+        f"O link da InfinitePay de {em_reais(pagamento.valor)} da {conta.nome} foi pago, "
+        "mas ele ja tinha sido cancelado (o mes foi registrado de outro jeito, ou o "
+        "valor mudou).\n\n"
+        "Nada foi confirmado no FechaCaixa. Confira e, se for o caso, devolva o "
+        "valor ou registre o pagamento em:\n"
+        f"{settings.FRONTEND_URL}/plataforma\n"
+    )
+    return _enviar(
+        f"Pago na InfinitePay depois de cancelado: {conta.nome}",
+        corpo,
+        [settings.MENSALIDADE_EMAIL_AVISO],
     )
