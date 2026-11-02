@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.test import SimpleTestCase
 
-from app.services.boletos.linha_digitavel import LinhaDigitavel, ler_linha
+from app.services.boletos.linha_digitavel import LinhaDigitavel, ler_linha, linha_da_barra
 
 # Linhas inventadas, com os verificadores calculados: nenhum boleto real entra
 # no repositorio, que tem espelho publico.
@@ -13,6 +13,9 @@ BANCARIO_SEM_VENCIMENTO = "23795555565555544444144444333338200000000005000"  # f
 CONSUMO_MOD10 = "836300000012894700000009011111111115111111111113"  # R$ 189,47
 CONSUMO_MOD11 = "838400000006573000000008022222222221222222222224"  # R$ 57,30
 CONSUMO_REFERENCIA = "837100000012894700000009011111111115111111111113"  # 3o digito 7
+# Os 44 digitos do codigo de barras das mesmas linhas.
+BARRA_BANCARIO = "34193163600000230001234567890123456789012345"
+BARRA_CONSUMO = "83630000001894700000000111111111111111111111"
 
 
 class LinhaDigitavelTests(SimpleTestCase):
@@ -58,3 +61,18 @@ class LinhaDigitavelTests(SimpleTestCase):
         for texto in (None, "", "123", BANCARIO + "0"):
             with self.subTest(texto=texto):
                 self.assertIsNone(ler_linha(texto, HOJE))
+
+
+class LinhaDaBarraTests(SimpleTestCase):
+    """O codigo de barras guarda os mesmos numeros da linha, em outra ordem e
+    sem os verificadores dos campos: a foto que nao le a linha ainda le a barra."""
+
+    def test_boleto_bancario(self):
+        self.assertEqual(linha_da_barra(BARRA_BANCARIO), BANCARIO)
+
+    def test_conta_de_consumo(self):
+        self.assertEqual(linha_da_barra(BARRA_CONSUMO), CONSUMO_MOD10)
+
+    def test_tamanho_errado(self):
+        self.assertIsNone(linha_da_barra("123"))
+        self.assertIsNone(linha_da_barra(None))

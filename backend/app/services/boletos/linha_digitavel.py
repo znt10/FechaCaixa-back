@@ -119,3 +119,25 @@ def ler_linha(texto, hoje):
     if len(digitos) == 48 and digitos[0] == "8":
         return _consumo(digitos)
     return None
+
+
+def linha_da_barra(barra):
+    """Os 44 digitos do codigo de barras viram a linha digitavel.
+
+    A barra traz os mesmos numeros, em outra ordem e sem os verificadores dos
+    campos. E o que a foto le de graca quando a linha impressa nao sai.
+    """
+    b = re.sub(r"\D", "", barra or "")
+    if len(b) != 44:
+        return None
+
+    if b[0] == "8":
+        identificador = b[2]
+        if identificador not in "6789":
+            return None
+        verificar = _modulo_10 if identificador in "67" else _modulo_11_consumo
+        blocos = [b[11 * i : 11 * i + 11] for i in range(4)]
+        return "".join(bloco + str(verificar(bloco)) for bloco in blocos)
+
+    campos = [b[0:4] + b[19:24], b[24:34], b[34:44]]
+    return "".join(campo + str(_modulo_10(campo)) for campo in campos) + b[4] + b[5:19]

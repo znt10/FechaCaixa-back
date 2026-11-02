@@ -1744,6 +1744,9 @@ class Boleto(BaseModel):
     arquivo = models.BinaryField(null=True, blank=True)
     arquivo_tipo = models.CharField(max_length=50, blank=True)
     arquivo_nome = models.CharField(max_length=255, blank=True)
+    # SHA-256 do arquivo como chegou, antes de reduzir: a mesma foto mandada
+    # duas vezes (toque duplo, ou alguem mandando de novo) e recusada.
+    arquivo_hash = models.CharField(max_length=64, blank=True, db_index=True)
 
     leitura_bruta = models.JSONField(null=True, blank=True)
     # O que alguem digitou ou corrigiu: leitura nenhuma sobrescreve.

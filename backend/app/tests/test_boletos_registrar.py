@@ -11,11 +11,11 @@ from decimal import Decimal
 from django.test import TestCase
 
 from app.models import Boleto, Conta
-from app.services.boletos.registrar import registrar_boleto
+from app.services.boletos.registrar import BoletoRepetido, registrar_boleto
 from app.services.comprovantes.arquivo import ArquivoInvalido
 from app.services.comprovantes.leitura import LeituraIndisponivel
 
-from .test_boletos_linha_digitavel import BANCARIO
+from .test_boletos_linha_digitavel import BANCARIO, CONSUMO_MOD10
 
 HOJE = date(2026, 11, 2)
 PDF = b"%PDF-1.4 boleto inventado"
@@ -45,14 +45,15 @@ class RegistrarBoletoTests(TestCase):
     def setUp(self):
         self.conta = Conta.objects.create(nome="Aurora")
 
-    def registrar(self, ler, **campos):
+    def registrar(self, ler, conteudo=PDF, ler_gratis=lambda conteudo, tipo: None, **campos):
         return registrar_boleto(
             self.conta,
-            PDF,
+            conteudo,
             "application/pdf",
             "boleto.pdf",
             origem=Boleto.Origem.FORMULARIO,
             ler=ler,
+            ler_gratis=ler_gratis,
             hoje=HOJE,
             **campos,
         )
@@ -125,3 +126,124 @@ class RegistrarBoletoTests(TestCase):
 
         self.assertIs(boleto.conferir, True)
         self.assertEqual(boleto.vencimento, date(2026, 11, 20))
+
+
+def ia_proibida(conteudo, tipo):
+    raise AssertionError("a leitura de graca bastava: a IA nao devia ser chamada")
+
+
+class LeituraDeGracaPrimeiroTests(TestCase):
+    """A IA custa: so entra quando o texto do PDF e o codigo de barras falham."""
+
+    def setUp(self):
+        self.conta = Conta.objects.create(nome="Aurora")
+
+    def registrar(self, ler, ler_gratis, **campos):
+        return registrar_boleto(
+            self.conta, PDF, "application/pdf", "boleto.pdf",
+            origem=Boleto.Origem.FORMULARIO, ler=ler, ler_gratis=ler_gratis, hoje=HOJE, **campos,
+        )
+
+    def test_linha_de_graca_dispensa_a_ia(self):
+        boleto = self.registrar(ia_proibida, le(BANCARIO))
+
+        self.assertEqual(boleto.linha_digitavel, BANCARIO)
+        self.assertEqual(boleto.vencimento, date(2026, 11, 20))
+        self.assertEqual(boleto.valor, Decimal("230.00"))
+        self.assertIsNone(boleto.leitura_bruta)
+
+    def test_sem_linha_de_graca_chama_a_ia(self):
+        boleto = self.registrar(le(leitura(vencimento="2026-11-25")), le(None))
+
+        self.assertEqual(boleto.vencimento, date(2026, 11, 25))
+
+    def test_conta_de_consumo_ainda_chama_a_ia_para_a_data(self):
+        """A linha da conta de luz nao traz vencimento: so o valor sai de graca."""
+        boleto = self.registrar(le(leitura(vencimento="2026-11-25")), le(CONSUMO_MOD10))
+
+        self.assertEqual(boleto.vencimento, date(2026, 11, 25))
+        self.assertEqual(boleto.valor, Decimal("189.47"))
+        self.assertEqual(boleto.linha_digitavel, CONSUMO_MOD10)
+
+    def test_conta_de_consumo_com_data_digitada_dispensa_a_ia(self):
+        boleto = self.registrar(ia_proibida, le(CONSUMO_MOD10), vencimento=date(2026, 11, 25))
+
+        self.assertEqual(boleto.valor, Decimal("189.47"))
+
+    def test_leitura_de_graca_que_quebra_nao_perde_o_boleto(self):
+        def quebra(conteudo, tipo):
+            raise ValueError("pdf estranho")
+
+        boleto = self.registrar(le(leitura(vencimento="2026-11-25")), quebra)
+
+        self.assertEqual(boleto.vencimento, date(2026, 11, 25))
+
+
+class BoletoRepetidoTests(TestCase):
+    """Como o comprovante: o mesmo boleto nao entra duas vezes."""
+
+    def setUp(self):
+        self.conta = Conta.objects.create(nome="Aurora")
+
+    def registrar(self, conteudo, ler=nao_le, ler_gratis=lambda conteudo, tipo: None, conta=None):
+        return registrar_boleto(
+            conta or self.conta, conteudo, "application/pdf", "boleto.pdf",
+            origem=Boleto.Origem.FORMULARIO, ler=ler, ler_gratis=ler_gratis, hoje=HOJE,
+        )
+
+    def test_mesmo_arquivo_duas_vezes_e_recusado(self):
+        self.registrar(PDF)
+
+        with self.assertRaises(BoletoRepetido):
+            self.registrar(PDF)
+        self.assertEqual(Boleto.objects.count(), 1)
+
+    def test_mesma_linha_em_outro_arquivo_e_recusada(self):
+        self.registrar(PDF, ler_gratis=le(BANCARIO))
+
+        with self.assertRaises(BoletoRepetido):
+            self.registrar(b"%PDF-1.4 outra foto", ler_gratis=le(BANCARIO))
+        self.assertEqual(Boleto.objects.count(), 1)
+
+    def test_mesma_linha_lida_pela_ia_tambem_e_recusada(self):
+        self.registrar(PDF, ler=le(leitura(linha_digitavel=BANCARIO)))
+
+        with self.assertRaises(BoletoRepetido):
+            self.registrar(b"%PDF-1.4 outra foto", ler=le(leitura(linha_digitavel=BANCARIO)))
+        self.assertEqual(Boleto.objects.count(), 1)
+
+    def test_pago_tambem_conta_como_repetido(self):
+        primeiro = self.registrar(PDF, ler_gratis=le(BANCARIO))
+        primeiro.situacao = Boleto.Situacao.PAGO
+        primeiro.save()
+
+        with self.assertRaises(BoletoRepetido):
+            self.registrar(b"%PDF-1.4 outra foto", ler_gratis=le(BANCARIO))
+
+    def test_descartado_nao_conta(self):
+        """Descartou por engano: mandar de novo tem que entrar."""
+        primeiro = self.registrar(PDF, ler_gratis=le(BANCARIO))
+        primeiro.situacao = Boleto.Situacao.DESCARTADO
+        primeiro.save()
+
+        self.registrar(PDF, ler_gratis=le(BANCARIO))
+
+        self.assertEqual(Boleto.objects.count(), 2)
+
+    def test_outra_empresa_nao_conta(self):
+        self.registrar(PDF, ler_gratis=le(BANCARIO))
+
+        self.registrar(PDF, ler_gratis=le(BANCARIO), conta=Conta.objects.create(nome="Rival"))
+
+        self.assertEqual(Boleto.objects.count(), 2)
+
+    def test_mesmo_valor_e_vencimento_sem_linha_marca_conferir(self):
+        """Foto diferente do mesmo boleto sem linha legivel: pode ser repetido,
+        mas nao da para ter certeza. A gerencia olha."""
+        self.registrar(PDF, ler=le(leitura(vencimento="2026-11-20", valor="230.00")))
+
+        segundo = self.registrar(
+            b"%PDF-1.4 outra foto", ler=le(leitura(vencimento="2026-11-20", valor="230.00"))
+        )
+
+        self.assertIs(segundo.conferir, True)

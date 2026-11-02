@@ -133,3 +133,25 @@ class BoletoDoFormularioTests(APITestCase):
 
         self.assertEqual(resp.status_code, 201, resp.data)
         self.assertIsNone(resp.data["valor"])
+
+    def test_mesma_foto_duas_vezes_e_409(self):
+        self.entrar()
+        foto = jpeg().read()
+
+        primeiro = self.client.post(
+            URL,
+            {"arquivo": SimpleUploadedFile("a.jpg", foto, content_type="image/jpeg"),
+             "loja": str(self.loja.public_id)},
+            format="multipart",
+        )
+        segundo = self.client.post(
+            URL,
+            {"arquivo": SimpleUploadedFile("b.jpg", foto, content_type="image/jpeg"),
+             "loja": str(self.loja.public_id)},
+            format="multipart",
+        )
+
+        self.assertEqual(primeiro.status_code, 201, primeiro.data)
+        self.assertEqual(segundo.status_code, 409)
+        self.assertEqual(segundo.data["error"], "Este boleto já foi lançado.")
+        self.assertEqual(Boleto.objects.count(), 1)

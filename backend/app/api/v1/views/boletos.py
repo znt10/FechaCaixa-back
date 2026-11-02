@@ -9,7 +9,7 @@ from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import APIException, NotFound, ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -23,11 +23,20 @@ from app.permissions import (
     get_conta_do_usuario,
 )
 from app.services.boletos.prazo import resumo_de_prazos
-from app.services.boletos.registrar import registrar_boleto
+from app.services.boletos.registrar import BoletoRepetido, registrar_boleto
 from app.services.comprovantes.arquivo import TAMANHO_MAXIMO, TIPOS_ACEITOS, ArquivoInvalido
 from app.services.comprovantes.normalizar import valor_decimal
 
 from ..serializers import BoletoSerializer
+
+
+class Conflito(APIException):
+    """409 no formato que a tela le ({"error": ...}), como o comprovante repetido."""
+
+    status_code = 409
+
+    def __init__(self):
+        super().__init__({"error": "Este boleto já foi lançado."})
 
 
 def _uuid_ou_none(texto):
@@ -86,6 +95,8 @@ def _registrar(request, conta, loja, **quem):
         )
     except ArquivoInvalido:
         raise ValidationError({"error": "A foto não abriu. Tire outra."})
+    except BoletoRepetido:
+        raise Conflito()
 
 
 class BoletoDoFormularioView(APIView):
