@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    BoletoViewSet,
     CategoriaDeMovimentoViewSet,
     CategoriaDeSalgadoViewSet,
     ComprovanteViewSet,
@@ -64,6 +65,7 @@ router.register(
 )
 router.register(r"user", UsuarioViewSet)
 router.register(r"comprovantes", ComprovanteViewSet, basename="comprovantes")
+router.register(r"boletos", BoletoViewSet, basename="boletos")
 router.register(
     r"remetentes-de-comprovante",
     RemetenteDeComprovanteViewSet,

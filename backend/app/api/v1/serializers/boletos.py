@@ -43,7 +43,10 @@ class BoletoSerializer(serializers.ModelSerializer):
         read_only_fields = [campo for campo in fields if campo not in CAMPOS_EDITAVEIS]
 
     def get_tem_arquivo(self, boleto):
-        return boleto.arquivo is not None
+        # Pelo tipo, e nao pelos bytes: a lista carrega o boleto com o arquivo
+        # adiado, e ler `arquivo` aqui buscaria a foto de cada linha. O registro
+        # grava os dois juntos.
+        return bool(boleto.arquivo_tipo)
 
     def get_pago_por_nome(self, boleto):
         quem = boleto.pago_por
