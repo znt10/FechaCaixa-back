@@ -24,6 +24,7 @@ from .views.acesso import (
     EmpresaDoFormularioView,
     SairDoFormularioView,
 )
+from .views.boletos import BoletoDoFormularioView
 from .views.mensalidade import JaPagueiView, MinhaMensalidadeView
 from .views.planilha import PlanilhaDoPeriodoView
 from .views.pluggy import (
@@ -128,6 +129,11 @@ urlpatterns = router.urls + [
         name="formulario-empresa",
     ),
     path("formulario/sair/", SairDoFormularioView.as_view(), name="formulario-sair"),
+    path(
+        "formulario/boletos/",
+        BoletoDoFormularioView.as_view(),
+        name="formulario-boletos",
+    ),
     path("minha-mensalidade/", MinhaMensalidadeView.as_view(), name="minha-mensalidade"),
     path(
         "minha-mensalidade/ja-paguei/",

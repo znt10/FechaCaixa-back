@@ -5,6 +5,7 @@ pediu nao pode amanhecer com uma pergunta a mais no formulario.
 """
 
 from django.contrib.auth.models import Group, User
+from django.core.cache import cache
 from django.test import TestCase
 from rest_framework.test import APITestCase
 
@@ -29,6 +30,7 @@ class BoletoModeloTests(TestCase):
 
 class ChaveDosBoletosTests(APITestCase):
     def setUp(self):
+        cache.clear()  # o limite por IP do acesso ao formulario
         self.conta = Conta.objects.create(nome="Aurora")
 
     def gerente(self):
