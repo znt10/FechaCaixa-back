@@ -7,6 +7,8 @@ from .operacoes import (
     confirmar_pagamento,
     informar_pagamento,
     leitura_da_conta,
+    link_aberto,
+    link_de_pagamento,
     recusar_pagamento,
     registrar_pagamento_manual,
 )
@@ -22,6 +24,8 @@ __all__ = [
     "confirmar_pagamento",
     "informar_pagamento",
     "leitura_da_conta",
+    "link_aberto",
+    "link_de_pagamento",
     "recusar_pagamento",
     "registrar_pagamento_manual",
 ]

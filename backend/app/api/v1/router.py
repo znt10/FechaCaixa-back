@@ -24,7 +24,7 @@ from .views.acesso import (
     EmpresaDoFormularioView,
     SairDoFormularioView,
 )
-from .views.mensalidade import JaPagueiView, MinhaMensalidadeView
+from .views.mensalidade import JaPagueiView, LinkDePagamentoView, MinhaMensalidadeView
 from .views.planilha import PlanilhaDoPeriodoView
 from .views.pluggy import (
     BuscarConexaoPluggyView,
@@ -133,6 +133,11 @@ urlpatterns = router.urls + [
         "minha-mensalidade/ja-paguei/",
         JaPagueiView.as_view(),
         name="minha-mensalidade-ja-paguei",
+    ),
+    path(
+        "minha-mensalidade/link/",
+        LinkDePagamentoView.as_view(),
+        name="minha-mensalidade-link",
     ),
     path("plataforma/pluggy/", PluggyDaPlataformaView.as_view(), name="plataforma-pluggy"),
     path(

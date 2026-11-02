@@ -2,15 +2,29 @@
 e registrar na mao. Nao conhece HTTP; as views e a tela Plataforma chamam
 aqui."""
 
+import logging
+import uuid
+
 from django.db import transaction
 from django.utils import timezone
 
 from app.excecoes import MENSAGEM_EMPRESA_DESATIVADA
 from app.models import Assinatura, Pagamento
+from app.services import infinitepay
+from app.services.infinitepay import ErroDaInfinitePay
 
 from .avisos import avisar_confirmacao, avisar_dono, avisar_recusa
 from .datas import dia_de_vencimento_para
 from .situacao import Situacao, ler_situacao, novo_paga_ate
+
+logger = logging.getLogger(__name__)
+
+SEM_MENSALIDADE = "Esta empresa não tem mensalidade a pagar."
+AUTOMATICA = "A confirmação deste pagamento é automática."
+LINK_FALHOU = (
+    "Não foi possível gerar o link de pagamento agora. "
+    "Tente de novo em alguns minutos."
+)
 
 
 class RecusaDaMensalidade(Exception):
@@ -69,7 +83,11 @@ def informar_pagamento(conta, usuario, agora=None):
     # clique: o segundo pedido espera o primeiro e ja encontra o pendente.
     assinatura = Assinatura.objects.select_for_update().filter(conta=conta).first()
     if assinatura is None or assinatura.isenta:
-        raise RecusaDaMensalidade("Esta empresa não tem mensalidade a pagar.")
+        raise RecusaDaMensalidade(SEM_MENSALIDADE)
+    # Com a InfinitePay ligada quem confirma e o aviso dela; o "Ja paguei" so
+    # seguraria o painel em AGUARDANDO esperando o dono conferir.
+    if infinitepay.configurada():
+        raise RecusaDaMensalidade(AUTOMATICA)
     if aviso_pendente(assinatura):
         raise RecusaDaMensalidade(
             "Você já avisou; o pagamento está aguardando confirmação."
@@ -121,6 +139,7 @@ def confirmar_pagamento(pagamento, usuario, agora=None):
     pagamento.save(update_fields=[
         "status", "resolvido_por", "resolvido_em", "paga_ate_depois", "updated_at",
     ])
+    cancelar_links_abertos(assinatura)
     avisar_confirmacao(pagamento)
     return pagamento
 
@@ -156,4 +175,73 @@ def registrar_pagamento_manual(assinatura, usuario, *, paga_ate, valor, observac
     assinatura.paga_ate = paga_ate
     assinatura.dia_de_vencimento = dia_de_vencimento_para(paga_ate)
     assinatura.save(update_fields=["paga_ate", "dia_de_vencimento", "updated_at"])
+    cancelar_links_abertos(assinatura)
     return pagamento
+
+
+def _links(assinatura):
+    return assinatura.pagamentos.filter(
+        status=Pagamento.Status.ABERTO, origem=Pagamento.Origem.INFINITEPAY
+    )
+
+
+def link_aberto(assinatura):
+    """O link da InfinitePay que ainda vale: aberto e do valor de hoje."""
+    return (
+        _links(assinatura)
+        .filter(valor=assinatura.valor_mensal)
+        .order_by("-informado_em", "-id")
+        .first()
+    )
+
+
+def cancelar_links_abertos(assinatura, *, exceto_valor=None):
+    """O mes foi pago por outro caminho (ou o valor mudou): o link aberto
+    perde a vez. Se ainda assim for pago, o aviso dele nao confirma nada
+    (ver infinitepay_retorno)."""
+    links = _links(assinatura)
+    if exceto_valor is not None:
+        links = links.exclude(valor=exceto_valor)
+    links.update(status=Pagamento.Status.CANCELADO, updated_at=timezone.now())
+
+
+@transaction.atomic
+def link_de_pagamento(conta, usuario, agora=None):
+    """O "Pagar mensalidade": o link aberto, ou um novo.
+
+    A trava na assinatura e o que impede dois links no duplo clique. O link
+    sai antes da linha: se a InfinitePay falhar, nao fica pagamento aberto
+    sem como pagar. O `public_id` do pagamento e o `order_nsu`."""
+    agora = agora or timezone.now()
+    if not conta.ativo:
+        raise RecusaDaMensalidade(MENSAGEM_EMPRESA_DESATIVADA)
+    assinatura = Assinatura.objects.select_for_update().filter(conta=conta).first()
+    if assinatura is None or assinatura.isenta:
+        raise RecusaDaMensalidade(SEM_MENSALIDADE)
+    if not infinitepay.configurada():
+        raise RecusaDaMensalidade("O pagamento por link não está configurado.")
+    aberto = link_aberto(assinatura)
+    if aberto:
+        return aberto
+    cancelar_links_abertos(assinatura, exceto_valor=assinatura.valor_mensal)
+
+    public_id = uuid.uuid4()
+    try:
+        link = infinitepay.criar_link(
+            valor_centavos=int(assinatura.valor_mensal * 100),
+            descricao=f"Mensalidade FechaCaixa - {conta.nome}",
+            referencia=str(public_id),
+        )
+    except ErroDaInfinitePay:
+        logger.exception("[mensalidade] link da InfinitePay nao saiu")
+        raise RecusaDaMensalidade(LINK_FALHOU)
+    return Pagamento.objects.create(
+        public_id=public_id,
+        assinatura=assinatura,
+        status=Pagamento.Status.ABERTO,
+        origem=Pagamento.Origem.INFINITEPAY,
+        valor=assinatura.valor_mensal,
+        informado_por=usuario,
+        informado_em=agora,
+        link_pagamento=link,
+    )
