@@ -165,6 +165,7 @@ class ContaAdmin(admin.ModelAdmin):
         'catalogo_ativo',
         'vendas_ativas',
         'nome_dos_itens',
+        'boletos_ativos',
     )
 
     def get_fieldsets(self, request, obj=None):

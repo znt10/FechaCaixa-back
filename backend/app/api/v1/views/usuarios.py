@@ -90,6 +90,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         tem_comprovantes = request.user.is_superuser or bool(
             conta and conta.modulo_comprovantes_ativo
         )
+        tem_boletos = request.user.is_superuser or bool(conta and conta.boletos_ativos)
 
         return Response({
             "id": request.user.id,
@@ -104,6 +105,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
                 "catalogo": tem_catalogo,
                 "banco": tem_banco,
                 "comprovantes": tem_comprovantes,
+                "boletos": tem_boletos,
             },
         })
 
