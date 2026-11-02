@@ -118,3 +118,10 @@ class RegistrarBoletoTests(TestCase):
             )
 
         self.assertEqual(Boleto.objects.count(), 0)
+
+    def test_carne_marca_conferir(self):
+        """Varios boletos num PDF: le o primeiro, e a gerencia confere o resto."""
+        boleto = self.registrar(le(leitura(varios_boletos=True, linha_digitavel=BANCARIO)))
+
+        self.assertIs(boleto.conferir, True)
+        self.assertEqual(boleto.vencimento, date(2026, 11, 20))

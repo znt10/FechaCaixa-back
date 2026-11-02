@@ -79,7 +79,9 @@ def registrar_boleto(
 
 def _mesclar(boleto, lido, hoje):
     boleto.leitura_bruta = lido
-    if lido.get("e_boleto") is False:
+    # Nao e boleto, ou e carne: le o primeiro, e a gerencia abre a foto para
+    # ver o resto. As outras parcelas nao podem passar despercebidas.
+    if lido.get("e_boleto") is False or lido.get("varios_boletos") is True:
         boleto.conferir = True
 
     lido_vencimento = _data(lido.get("vencimento")) if lido.get("vencimento") else None

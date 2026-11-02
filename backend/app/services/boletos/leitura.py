@@ -29,9 +29,10 @@ ESQUEMA = {
     "type": "object",
     "properties": {
         "e_boleto": {"type": "boolean"},
+        "varios_boletos": {"type": "boolean"},
         **{campo: _TEXTO_OU_NULO for campo in CAMPOS},
     },
-    "required": ["e_boleto", *CAMPOS],
+    "required": ["e_boleto", "varios_boletos", *CAMPOS],
     "additionalProperties": False,
 }
 
@@ -41,7 +42,8 @@ Extraia os campos exatamente como aparecem. Use null para o que não aparece.
 - valor: o valor do documento, só número com ponto decimal, ex. "230.00".
 - beneficiario = quem está cobrando (cedente, empresa da conta); documento = CPF ou CNPJ como aparece.
 - linha_digitavel: a sequência numérica acima do código de barras, como aparece.
-- e_boleto: false se o arquivo não for boleto nem conta."""
+- e_boleto: false se o arquivo não for boleto nem conta.
+- varios_boletos: true se o arquivo tiver mais de um boleto (carnê, várias parcelas); nesse caso, extraia só o primeiro."""
 
 
 def ler_boleto(conteudo, tipo):

@@ -1,6 +1,7 @@
 """Os boletos a pagar: o envio da loja e o painel da gerencia."""
 
 import datetime
+import re
 import uuid
 
 from django.db.models import F
@@ -59,9 +60,12 @@ def _digitados(request):
             raise ValidationError({"error": "O vencimento precisa ser uma data."})
 
     valor = None
-    if request.data.get("valor"):
-        valor = valor_decimal(request.data["valor"])
-        if valor is None:
+    texto = request.data.get("valor")
+    if texto:
+        valor = valor_decimal(texto)
+        # Zero e "nao digitou": o campo de moeda apagado mostra 0,00, e
+        # recusar aqui travaria a loja num campo opcional.
+        if valor is None and re.sub(r"[^\d]", "", texto).strip("0"):
             raise ValidationError({"error": "O valor não parece dinheiro."})
     return vencimento, valor
 

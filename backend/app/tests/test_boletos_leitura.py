@@ -8,7 +8,7 @@ from django.test import SimpleTestCase
 from app.services.boletos.leitura import CAMPOS, ler_boleto
 from app.services.comprovantes.leitura import LeituraIndisponivel
 
-LEITURA = {"e_boleto": True, **{campo: None for campo in CAMPOS}, "valor": "230.00"}
+LEITURA = {"e_boleto": True, "varios_boletos": False, **{campo: None for campo in CAMPOS}, "valor": "230.00"}
 
 
 def resposta(texto, stop_reason="end_turn"):
@@ -38,7 +38,8 @@ class LerBoletoTests(SimpleTestCase):
         pedido = criar.call_args.kwargs
         self.assertEqual(pedido["messages"][0]["content"][0]["type"], "image")
         self.assertEqual(pedido["model"], "claude-haiku-5-5")
-        self.assertEqual(pedido["output_config"]["format"]["schema"]["required"][0], "e_boleto")
+        esquema = pedido["output_config"]["format"]["schema"]
+        self.assertEqual(esquema["required"][:2], ["e_boleto", "varios_boletos"])
 
     @mock.patch("app.services.boletos.leitura.anthropic.Anthropic")
     def test_resposta_vira_dict(self, cliente):

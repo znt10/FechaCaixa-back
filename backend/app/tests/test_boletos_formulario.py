@@ -124,3 +124,12 @@ class BoletoDoFormularioTests(APITestCase):
 
         self.assertEqual(resp.status_code, 201, resp.data)
         self.assertEqual(resp.data["valor"], "1234.56")
+
+    def test_valor_zero_e_nao_digitado(self):
+        """O campo de moeda apagado mostra 0,00: recusar travaria a loja."""
+        self.entrar()
+
+        resp = self.enviar(valor="0.00")
+
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertIsNone(resp.data["valor"])
