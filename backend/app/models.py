@@ -1504,10 +1504,16 @@ class Pagamento(BaseModel):
         AGUARDANDO = "AGUARDANDO", "Aguardando confirmação"
         CONFIRMADO = "CONFIRMADO", "Confirmado"
         RECUSADO = "RECUSADO", "Recusado"
+        # O link da InfinitePay gerado e ainda nao pago. Nao e aviso: nao
+        # segura o painel. CANCELADO e o link que perdeu a vez (o mes foi pago
+        # por outro caminho, ou o valor mudou).
+        ABERTO = "ABERTO", "Link gerado"
+        CANCELADO = "CANCELADO", "Cancelado"
 
     class Origem(models.TextChoices):
         JA_PAGUEI = "JA_PAGUEI", "Já paguei"
         MANUAL = "MANUAL", "Registrado pelo dono"
+        INFINITEPAY = "INFINITEPAY", "InfinitePay"
 
     assinatura = models.ForeignKey(
         Assinatura, on_delete=models.CASCADE, related_name="pagamentos"
@@ -1529,6 +1535,12 @@ class Pagamento(BaseModel):
     # cada pagamento comprou.
     paga_ate_depois = models.DateField(null=True, blank=True)
     observacao = models.TextField(blank=True)
+    # So o pagamento pela InfinitePay usa: o link do checkout que a tela abre
+    # e o `transaction_nsu` e o `invoice_slug` do primeiro aviso, sem os quais
+    # o `payment_check` nao tem como conferir depois.
+    link_pagamento = models.TextField(blank=True, default="")
+    ip_transacao = models.CharField(max_length=64, blank=True, default="")
+    ip_fatura = models.CharField(max_length=128, blank=True, default="")
 
     class Meta:
         ordering = ["-informado_em", "-id"]

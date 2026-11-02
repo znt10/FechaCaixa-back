@@ -73,3 +73,28 @@ class MigrationDasContasExistentesTests(TestCase):
         depois = Assinatura.objects.get(conta=conta)
         self.assertEqual(depois.pk, antes.pk)
         self.assertFalse(depois.isenta)
+
+
+class PagamentoPeloLinkTests(TestCase):
+    def test_pagamento_pelo_link_guarda_link_e_transacao(self):
+        from app.models import Pagamento
+        from app.services.mensalidade import aviso_pendente
+
+        conta = Conta.objects.create(nome="Padaria do Link")
+        assinatura = Assinatura.objects.get(conta=conta)
+        Pagamento.objects.create(
+            assinatura=assinatura,
+            status=Pagamento.Status.ABERTO,
+            origem=Pagamento.Origem.INFINITEPAY,
+            valor=Decimal("100.00"),
+            link_pagamento="https://x",
+            ip_transacao="t1",
+            ip_fatura="f1",
+        )
+
+        pagamento = Pagamento.objects.get(assinatura=assinatura)
+        self.assertEqual(pagamento.link_pagamento, "https://x")
+        self.assertEqual(pagamento.ip_transacao, "t1")
+        self.assertEqual(pagamento.ip_fatura, "f1")
+        # O link aberto nao e aviso de "ja paguei": nao segura o painel.
+        self.assertIsNone(aviso_pendente(assinatura))

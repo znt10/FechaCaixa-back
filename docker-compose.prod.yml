@@ -125,6 +125,11 @@ services:
       PIX_CHAVE: ${PIX_CHAVE:-}
       PIX_NOME_RECEBEDOR: ${PIX_NOME_RECEBEDOR:-}
       PIX_CIDADE: ${PIX_CIDADE:-}
+      # Mensalidade pela InfinitePay: com HANDLE e SEGREDO a empresa paga por
+      # link e confirma sozinho; vazios, fica o Pix acima.
+      INFINITEPAY_HANDLE: ${INFINITEPAY_HANDLE:-}
+      INFINITEPAY_API_KEY: ${INFINITEPAY_API_KEY:-}
+      INFINITEPAY_WEBHOOK_SEGREDO: ${INFINITEPAY_WEBHOOK_SEGREDO:-}
       # Pluggy: a api cifra o Client Secret ao salvar; o servico `pluggy` decifra.
       PLUGGY_CHAVE_CIFRA: ${PLUGGY_CHAVE_CIFRA:-}
       PLUGGY_EMAIL_AVISO: ${PLUGGY_EMAIL_AVISO:-}
