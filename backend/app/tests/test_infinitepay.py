@@ -82,6 +82,15 @@ class CriarLinkTests(SimpleTestCase):
             "https://fechacaixa.io/backend/api/v1/infinitepay/retorno?t=s3gr3do",
         )
 
+    @override_settings(INFINITEPAY_WEBHOOK_SEGREDO="a+b&c=d#e%f")
+    def test_segredo_com_caractere_especial_vai_codificado(self):
+        import urllib.parse
+
+        with responde({"url": "https://checkout/x"}) as urlopen:
+            self.criar()
+        webhook = urllib.parse.urlsplit(corpo_do_pedido(urlopen)["webhook_url"])
+        self.assertEqual(urllib.parse.parse_qs(webhook.query)["t"], ["a+b&c=d#e%f"])
+
     def test_criar_link_aceita_link_no_lugar_de_url(self):
         with responde({"link": "https://checkout/y"}):
             self.assertEqual(self.criar(), "https://checkout/y")

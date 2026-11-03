@@ -13,6 +13,7 @@ from app.permissions import IsSuperuser
 from app.services.mensalidade import (
     RecusaDaMensalidade,
     assinatura_da,
+    cancelar_links_abertos,
     confirmar_pagamento,
     recusar_pagamento,
     registrar_pagamento_manual,
@@ -60,8 +61,19 @@ class EmpresaDaPlataformaView(DaPlataforma):
             conta.save(update_fields=["ativo", "updated_at"])
 
         campos = [c for c in ("valor_mensal", "isenta", "nunca_bloquear", "paga_ate") if c in dados]
+        assinatura = assinatura_da(conta)
+        # O link aberto da InfinitePay perde a vez quando a cobranca muda por
+        # aqui: pago depois disso, ele nao confirma nada e vira aviso ao dono
+        # (ver mensalidade/infinitepay_retorno).
+        if assinatura and (
+            dados.get("ativo") is False
+            or dados.get("isenta") is True
+            or "paga_ate" in dados
+            or dados.get("valor_mensal", assinatura.valor_mensal) != assinatura.valor_mensal
+        ):
+            cancelar_links_abertos(assinatura)
         if campos:
-            assinatura = assinatura_da(conta) or Assinatura.primeiro_mes_de_graca(conta)
+            assinatura = assinatura or Assinatura.primeiro_mes_de_graca(conta)
             for campo in campos:
                 setattr(assinatura, campo, dados[campo])
             if "paga_ate" in dados:

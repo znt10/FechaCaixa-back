@@ -1539,8 +1539,10 @@ class Pagamento(BaseModel):
     # e o `transaction_nsu` e o `invoice_slug` do primeiro aviso, sem os quais
     # o `payment_check` nao tem como conferir depois.
     link_pagamento = models.TextField(blank=True, default="")
-    ip_transacao = models.CharField(max_length=64, blank=True, default="")
-    ip_fatura = models.CharField(max_length=128, blank=True, default="")
+    # Texto sem limite: o tamanho vem da InfinitePay, e um valor maior que a
+    # coluna daria erro no MySQL a cada reenvio do aviso.
+    ip_transacao = models.TextField(blank=True, default="")
+    ip_fatura = models.TextField(blank=True, default="")
 
     class Meta:
         ordering = ["-informado_em", "-id"]

@@ -65,6 +65,14 @@ class RetornoTests(OperacoesTests):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ["ger@padaria.com"])
 
+    def test_transacao_longa_nao_quebra_o_aviso(self):
+        link = self.link()
+        transacao, fatura = "t" * 200, "f" * 300
+        with conferir_responde():
+            self.assertEqual(self.processar(link, transacao=transacao, slug=fatura), "confirmada")
+        link.refresh_from_db()
+        self.assertEqual((link.ip_transacao, link.ip_fatura), (transacao, fatura))
+
     def test_aviso_com_valor_diferente_ignora(self):
         link = self.link()
         with conferir_responde({"pago": True, "valor_centavos": 100, "meio": "pix"}):
@@ -221,6 +229,7 @@ class RetornoViewTests(RetornoTests):
     # Os casos do servico ja rodam na classe de cima.
     test_aviso_pago_confirma_avanca_paga_ate_e_manda_email = None
     test_aviso_com_valor_diferente_ignora = None
+    test_transacao_longa_nao_quebra_o_aviso = None
     test_aviso_nao_pago_fica_pendente_e_guarda_transacao = None
     test_infinitepay_fora_sobe_mas_guarda_transacao = None
     test_aviso_repetido_em_confirmado_e_ja_resolvida = None

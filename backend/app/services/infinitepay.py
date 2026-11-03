@@ -18,6 +18,7 @@ import hmac
 import json
 import logging
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from django.conf import settings
@@ -81,7 +82,9 @@ def criar_link(*, valor_centavos: int, descricao: str, referencia: str) -> str:
         "redirect_url": f"{frente}/",
         "webhook_url": (
             f"{frente}/backend/api/v1/infinitepay/retorno"
-            f"?t={settings.INFINITEPAY_WEBHOOK_SEGREDO}"
+            # Codificado: um `+` ou `&` no segredo chegaria trocado, e todo
+            # aviso daria 401 sem ninguem ver.
+            f"?t={urllib.parse.quote(settings.INFINITEPAY_WEBHOOK_SEGREDO, safe='')}"
         ),
     })
     # A documentacao nao mostra a resposta; `url` e o que se espera, `link`
