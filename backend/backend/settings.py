@@ -283,6 +283,16 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 MENSALIDADE_VALOR_PADRAO = Decimal(os.getenv("MENSALIDADE_VALOR_PADRAO", "100.00"))
 MENSALIDADE_EMAIL_AVISO = os.getenv("MENSALIDADE_EMAIL_AVISO", "")
 
+# A mensalidade pelo Checkout Integrado da InfinitePay. Com HANDLE (a
+# InfiniteTag, sem o `$`) e SEGREDO preenchidos, a empresa paga por um link
+# (Pix ou cartao) que se confirma sozinho; faltando um, tudo segue no Pix
+# estatico abaixo. O SEGREDO vai na `webhook_url` (`?t=`), porque o aviso da
+# InfinitePay nao e assinado. A API_KEY a documentacao (10/2026) nao pede; se
+# um dia pedir, vai no cabecalho `X-Api-Key`.
+INFINITEPAY_HANDLE = os.getenv("INFINITEPAY_HANDLE", "")
+INFINITEPAY_API_KEY = os.getenv("INFINITEPAY_API_KEY", "")
+INFINITEPAY_WEBHOOK_SEGREDO = os.getenv("INFINITEPAY_WEBHOOK_SEGREDO", "")
+
 # ─── Pluggy ───────────────────────────────────────────────────────────────────
 # Chave Fernet que cifra o Client Secret da Pluggy no banco. Sem ela o segredo
 # nao pode ser salvo. PLUGGY_EMAIL_AVISO recebe os avisos de conexao; vazia,

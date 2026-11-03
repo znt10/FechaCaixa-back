@@ -4,8 +4,9 @@ from django.conf import settings
 from django.utils import timezone
 
 from app.permissions import is_gerente_ou_admin
+from app.services import infinitepay
 
-from .operacoes import assinatura_da, aviso_pendente, leitura_da_conta
+from .operacoes import assinatura_da, aviso_pendente, leitura_da_conta, link_aberto
 from .pix import copia_e_cola, identificador_da_conta, qr_svg
 
 
@@ -30,6 +31,11 @@ def retrato_da_mensalidade(conta, usuario, agora=None):
         return {"situacao": leitura.situacao.value}
 
     pendente = aviso_pendente(assinatura)
+    # Pela InfinitePay a tela so abre o link: sem QR, sem copia e cola e sem
+    # "Ja paguei", porque o aviso dela confirma sozinho.
+    automatico = infinitepay.configurada()
+    pode_pagar = bool(conta.ativo and not assinatura.isenta and is_gerente_ou_admin(usuario))
+    aberto = link_aberto(assinatura) if automatico else None
     return {
         "situacao": leitura.situacao.value,
         "valor": str(assinatura.valor_mensal),
@@ -41,11 +47,9 @@ def retrato_da_mensalidade(conta, usuario, agora=None):
             if pendente
             else None
         ),
-        "pode_informar": bool(
-            conta.ativo
-            and not assinatura.isenta
-            and pendente is None
-            and is_gerente_ou_admin(usuario)
-        ),
-        "pix": pix_da_assinatura(assinatura),
+        "pode_informar": pode_pagar and pendente is None and not automatico,
+        "pode_pagar": pode_pagar,
+        "pagamento_automatico": automatico,
+        "link": aberto.link_pagamento if aberto else None,
+        "pix": None if automatico else pix_da_assinatura(assinatura),
     }
