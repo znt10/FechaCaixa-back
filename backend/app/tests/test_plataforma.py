@@ -166,3 +166,43 @@ class PagamentosTests(PlataformaTests):
         self.assertEqual(resp.data["situacao"], "BLOQUEADA")
         pagamento.refresh_from_db()
         self.assertEqual(pagamento.status, "RECUSADO")
+
+
+class MudancaCancelaLinkTests(PlataformaTests):
+    """Mudar a empresa na Plataforma tira a vez do link aberto da InfinitePay:
+    pago depois disso, ele nao confirma nada e vira aviso ao dono."""
+
+    def url(self, conta):
+        return f"{LISTA}{conta.public_id}/"
+
+    def link(self, conta):
+        return Pagamento.objects.create(
+            assinatura=Assinatura.objects.get(conta=conta),
+            status="ABERTO", origem="INFINITEPAY", valor="100.00",
+            link_pagamento="https://checkout/1",
+        )
+
+    def mudar(self, mudanca):
+        conta = self.empresa("Padaria")
+        link = self.link(conta)
+        resp = self.api.patch(self.url(conta), mudanca, format="json")
+        self.assertEqual(resp.status_code, 200, resp.data)
+        link.refresh_from_db()
+        return link.status
+
+    def test_mudar_valor_cancela_link_aberto(self):
+        self.assertEqual(self.mudar({"valor_mensal": "120.00"}), "CANCELADO")
+
+    def test_isentar_cancela_link_aberto(self):
+        self.assertEqual(self.mudar({"isenta": True}), "CANCELADO")
+
+    def test_mudar_paga_ate_cancela_link_aberto(self):
+        self.assertEqual(self.mudar({"paga_ate": "2026-12-05"}), "CANCELADO")
+
+    def test_desativar_cancela_link_aberto(self):
+        self.assertEqual(self.mudar({"ativo": False}), "CANCELADO")
+
+    def test_mesmo_valor_e_nunca_bloquear_nao_cancelam(self):
+        self.assertEqual(
+            self.mudar({"valor_mensal": "100.00", "nunca_bloquear": True}), "ABERTO"
+        )
