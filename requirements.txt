@@ -20,6 +20,7 @@ pillow==12.2.0
 pycparser==3.0
 pydyf==0.12.1
 PyJWT==2.12.1
+pypdf==6.21.4
 pyphen==0.17.2
 python-decouple==3.8
 python-dotenv==1.2.2
@@ -43,3 +44,4 @@ whitenoise==6.8.2
 segno==1.6.6
 anthropic==1.13.0
 cryptography==50.0.2
+zxing-cpp==3.1.1

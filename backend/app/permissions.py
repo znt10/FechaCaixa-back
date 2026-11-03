@@ -290,6 +290,23 @@ class ModuloDeComprovantesAtivo(BasePermission):
         return bool(conta and conta.modulo_comprovantes_ativo)
 
 
+class ModuloDeBoletosAtivo(BasePermission):
+    """Barra quem nao ligou os boletos na tela Empresa. Mesmo desenho do
+    ModuloDeComprovantesAtivo; o cargo fica com IsGerenteOrAdministrador."""
+
+    message = "Esta empresa não usa boletos a pagar."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return True
+
+        conta = get_conta_do_usuario(user)
+        return bool(conta and conta.boletos_ativos)
+
+
 class UsaOPlanoDeContas(BasePermission):
     """O plano de contas serve aos dois modulos: a nota e classificada nele, e
     o pagamento do extrato tambem — o aluguel pago no banco e o aluguel da

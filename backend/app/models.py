@@ -92,6 +92,12 @@ class Conta(BaseModel):
     # catalogo, e so lista as categorias marcadas com `conta_vendas`.
     vendas_ativas = models.BooleanField("Conta vendas por item", default=False)
 
+    # Os boletos e contas que chegam na loja para pagar depois: a loja
+    # fotografa no fechamento, a gerencia ve o vencimento no painel. Nasce
+    # desligada pelo mesmo motivo das vendas: nem toda empresa recebe boleto
+    # na loja. Liga a pergunta do formulario e a aba Boletos juntas.
+    boletos_ativos = models.BooleanField("Usa boletos a pagar", default=False)
+
     # Como a empresa chama o que vende, no plural: entra no meio de frase
     # ("Houve perda de paes?", "Catalogo de paes"). Plural so, e nao
     # singular + genero: "Houve perda de ..." dispensa o "algum/alguma".
@@ -1703,3 +1709,89 @@ class LeituraDaCaixa(models.Model):
 
     uid_validade = models.BigIntegerField(null=True, blank=True)
     ultimo_uid = models.BigIntegerField(null=True, blank=True)
+
+
+class Boleto(BaseModel):
+    """Um boleto ou conta que chegou na loja para pagar depois.
+
+    A loja fotografa e digita o vencimento; quem paga e a gerencia, pelo app
+    do banco. Nao entra em total nenhum: a nota e o comprovante do pagamento ja
+    entram, e o boleto contaria a mesma despesa duas vezes. E um lembrete com
+    a foto, nao um gasto.
+    """
+
+    class Situacao(models.TextChoices):
+        A_PAGAR = "A_PAGAR", "A pagar"
+        PAGO = "PAGO", "Pago"
+        DESCARTADO = "DESCARTADO", "Descartado"
+
+    class Origem(models.TextChoices):
+        FORMULARIO = "FORMULARIO", "Formulário da loja"
+        PAINEL = "PAINEL", "Painel"
+
+    conta = models.ForeignKey(Conta, on_delete=models.CASCADE, related_name="boletos")
+    # Nula: a conta de luz que chega direto para a gerencia nao e de loja
+    # nenhuma. PROTECT como no comprovante.
+    loja = models.ForeignKey(
+        Loja, on_delete=models.PROTECT, null=True, blank=True, related_name="boletos"
+    )
+    origem = models.CharField(max_length=12, choices=Origem.choices)
+    situacao = models.CharField(
+        max_length=12, choices=Situacao.choices, default=Situacao.A_PAGAR
+    )
+    # A leitura discordou do que a loja digitou, a linha lida nao passou nos
+    # verificadores ou o arquivo nao parece boleto: a gerencia olha a foto.
+    conferir = models.BooleanField(default=False)
+
+    # Nulo = "sem data": ninguem digitou e a leitura nao achou. Entra no aviso.
+    vencimento = models.DateField(null=True, blank=True)
+    valor = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    beneficiario_nome = models.CharField(max_length=200, blank=True)
+    beneficiario_documento = models.CharField(max_length=30, blank=True)
+    # So digitos, e so quando passou nos verificadores: e o que a gerencia
+    # copia para pagar no app do banco.
+    linha_digitavel = models.CharField(max_length=48, blank=True)
+    descricao = models.CharField(max_length=200, blank=True)
+
+    # No banco pelo mesmo motivo do comprovante: o disco do container some a
+    # cada deploy. Foto reduzida; PDF como veio.
+    arquivo = models.BinaryField(null=True, blank=True)
+    arquivo_tipo = models.CharField(max_length=50, blank=True)
+    arquivo_nome = models.CharField(max_length=255, blank=True)
+    # SHA-256 do arquivo como chegou, antes de reduzir: a mesma foto mandada
+    # duas vezes (toque duplo, ou alguem mandando de novo) e recusada.
+    arquivo_hash = models.CharField(max_length=64, blank=True, db_index=True)
+
+    leitura_bruta = models.JSONField(null=True, blank=True)
+    # O que alguem digitou ou corrigiu: leitura nenhuma sobrescreve.
+    campos_editados = models.JSONField(default=list, blank=True)
+
+    dispositivo = models.ForeignKey(
+        DispositivoDoFormulario,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="boletos",
+    )
+    enviado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="boletos_enviados",
+    )
+    pago_em = models.DateTimeField(null=True, blank=True)
+    pago_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="boletos_pagos",
+    )
+
+    class Meta:
+        ordering = ["vencimento"]
+        indexes = [models.Index(fields=["conta", "situacao", "vencimento"])]
+
+    def __str__(self):
+        return f"Boleto {self.vencimento or 'sem data'} {self.valor or ''}".strip()

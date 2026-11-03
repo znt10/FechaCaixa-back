@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    BoletoViewSet,
     CategoriaDeMovimentoViewSet,
     CategoriaDeSalgadoViewSet,
     ComprovanteViewSet,
@@ -24,6 +25,7 @@ from .views.acesso import (
     EmpresaDoFormularioView,
     SairDoFormularioView,
 )
+from .views.boletos import BoletoDoFormularioView
 from .views.mensalidade import (
     InfinitePayRetornoView,
     JaPagueiView,
@@ -68,6 +70,7 @@ router.register(
 )
 router.register(r"user", UsuarioViewSet)
 router.register(r"comprovantes", ComprovanteViewSet, basename="comprovantes")
+router.register(r"boletos", BoletoViewSet, basename="boletos")
 router.register(
     r"remetentes-de-comprovante",
     RemetenteDeComprovanteViewSet,
@@ -133,6 +136,11 @@ urlpatterns = router.urls + [
         name="formulario-empresa",
     ),
     path("formulario/sair/", SairDoFormularioView.as_view(), name="formulario-sair"),
+    path(
+        "formulario/boletos/",
+        BoletoDoFormularioView.as_view(),
+        name="formulario-boletos",
+    ),
     path("minha-mensalidade/", MinhaMensalidadeView.as_view(), name="minha-mensalidade"),
     path(
         "minha-mensalidade/ja-paguei/",
