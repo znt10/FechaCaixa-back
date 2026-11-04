@@ -52,9 +52,11 @@ def registrar_comprovante(
     enviado_por=None,
     loja=None,
     ler=ler_arquivo,
+    pessoal=False,
 ):
     comprovante = Comprovante(
         conta=conta,
+        pessoal=pessoal,
         origem=origem,
         situacao=CONFERIR,
         arquivo_nome=(nome or "")[:255],
@@ -113,7 +115,10 @@ def _aplicar_leitura(comprovante, dados, loja_escolhida):
         conta, comprovante.recebedor_documento
     ) is not None
     comprovante.loja = loja_escolhida or loja_do_pagador
-    comprovante.elemento = categoria_sugerida(conta, comprovante.recebedor_normalizado)
+    # O gasto pessoal fica sem categoria: a regra do recebedor e da despesa da
+    # empresa, e "mercado" nao e despesa de loja.
+    if not comprovante.pessoal:
+        comprovante.elemento = categoria_sugerida(conta, comprovante.recebedor_normalizado)
     comprovante.motivo, comprovante.situacao = _situacao(comprovante, dados, recebido)
 
 

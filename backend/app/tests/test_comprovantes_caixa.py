@@ -12,7 +12,7 @@ from app.models import Comprovante, LeituraDaCaixa, RemetenteDeComprovante
 from app.services.comprovantes.caixa import ler_caixa
 from app.services.comprovantes.leitura import CAMPOS
 
-from .fabricas import conta_padrao
+from .fabricas import conta_padrao, criar_loja
 
 PDF = b"%PDF-1.4 " + b"x" * 100
 FOTO_GRANDE = b"\x89PNG" + b"x" * (20 * 1024)
@@ -89,7 +89,7 @@ class LerCaixaTests(TestCase):
         ler_caixa(caixa, ler=leitor)
 
         self.assertFalse(Comprovante.objects.exists())
-        self.assertEqual(LeituraDaCaixa.objects.get(pk=1).ultimo_uid, 5)
+        self.assertEqual(LeituraDaCaixa.objects.get(caixa="LOJAS").ultimo_uid, 5)
 
     def test_cinco_anexos_viram_cinco_comprovantes(self):
         anexos = [(f"c{i}.pdf", "application/pdf", PDF + bytes([i])) for i in range(5)]
@@ -242,6 +242,62 @@ class LerCaixaTests(TestCase):
         ler_caixa(CaixaFalsa({11: mensagem_de("sabrina.lima@gmail.com", anexos)}), ler=leitor)
         self.assertFalse(Comprovante.objects.exists())
 
+@mock.patch("app.services.comprovantes.registrar.preparar_arquivo", lambda c, t: (c, t))
+class CaixaPessoalTests(TestCase):
+    def setUp(self):
+        self.conta = conta_padrao()
+        self.conta.modulo_comprovantes_ativo = True
+        self.conta.save()
+        RemetenteDeComprovante.objects.create(conta=self.conta, email="sabrina.lima@gmail.com")
+        LeituraDaCaixa.objects.create(caixa="LOJAS", uid_validade=7, ultimo_uid=10)
+        LeituraDaCaixa.objects.create(caixa="PESSOAL", uid_validade=3, ultimo_uid=4)
+
+    def pdf(self, uid, n=0):
+        return {uid: mensagem_de(
+            "sabrina.lima@gmail.com", [("a.pdf", "application/pdf", PDF + bytes([n]))],
+            message_id=f"<p{uid}@teste>",
+        )}
+
+    def test_caixa_pessoal_marca_os_comprovantes_como_pessoais(self):
+        resumo = ler_caixa(CaixaFalsa(self.pdf(5), validade=3), ler=leitor, pessoal=True)
+        self.assertEqual(resumo.comprovantes, 1)
+        self.assertTrue(Comprovante.objects.get().pessoal)
+
+    def test_caixa_das_lojas_continua_criando_de_loja(self):
+        ler_caixa(CaixaFalsa(self.pdf(11), validade=7), ler=leitor)
+        self.assertFalse(Comprovante.objects.get().pessoal)
+
+    def test_primeira_vez_da_caixa_pessoal_comeca_do_fim(self):
+        """A caixa nova ja tinha 4 e-mails: nenhum deles entra."""
+        LeituraDaCaixa.objects.filter(caixa="PESSOAL").delete()
+        emails = {**self.pdf(1, 1), **self.pdf(2, 2), **self.pdf(3, 3), **self.pdf(4, 4)}
+
+        ler_caixa(CaixaFalsa(emails, validade=3), ler=leitor, pessoal=True)
+
+        self.assertFalse(Comprovante.objects.exists())
+        self.assertEqual(LeituraDaCaixa.objects.get(caixa="PESSOAL").ultimo_uid, 4)
+
+    def test_as_duas_caixas_tem_estados_separados(self):
+        ler_caixa(CaixaFalsa(self.pdf(5), validade=3), ler=leitor, pessoal=True)
+        self.assertEqual(LeituraDaCaixa.objects.get(caixa="PESSOAL").ultimo_uid, 5)
+        lojas = LeituraDaCaixa.objects.get(caixa="LOJAS")
+        self.assertEqual((lojas.uid_validade, lojas.ultimo_uid), (7, 10))
+
+    def test_pessoal_pago_com_conta_da_loja_guarda_a_loja(self):
+        loja = criar_loja(
+            nome_loja="Loja A", cidade="Patos", endereco="Rua 1", cnpj="12.345.678/0001-95"
+        )
+
+        def leitor_da_loja(conteudo, tipo):
+            return {**leitor(conteudo, tipo), "pagador_documento": "12.345.678/0001-95"}
+
+        ler_caixa(CaixaFalsa(self.pdf(5), validade=3), ler=leitor_da_loja, pessoal=True)
+
+        comprovante = Comprovante.objects.get()
+        self.assertTrue(comprovante.pessoal)
+        self.assertEqual(comprovante.loja, loja)
+
+
 class ComandoTests(TestCase):
     @override_settings(COMPROVANTES_EMAIL="", COMPROVANTES_SENHA_APP="")
     def test_sem_configuracao_avisa_e_sai(self):
@@ -267,3 +323,60 @@ class ComandoTests(TestCase):
             side_effect=OSError("sem rede"),
         ):
             call_command("ler_caixa_de_comprovantes", stdout=StringIO())
+
+
+class ComandoComDuasCaixasTests(TestCase):
+    @override_settings(
+        COMPROVANTES_EMAIL="lojas@teste.local", COMPROVANTES_SENHA_APP="x",
+        COMPROVANTES_PESSOAL_EMAIL="pessoal@teste.local", COMPROVANTES_PESSOAL_SENHA_APP="y",
+    )
+    def test_le_as_duas_caixas_e_so_a_pessoal_e_pessoal(self):
+        with mock.patch(
+            "app.management.commands.ler_caixa_de_comprovantes.CaixaImap",
+            side_effect=lambda e, s: CaixaFalsa({}),
+        ) as fabrica, mock.patch(
+            "app.management.commands.ler_caixa_de_comprovantes.ler_caixa",
+            wraps=ler_caixa,
+        ) as ler:
+            call_command("ler_caixa_de_comprovantes", stdout=StringIO())
+        self.assertEqual(
+            [c.args for c in fabrica.call_args_list],
+            [("lojas@teste.local", "x"), ("pessoal@teste.local", "y")],
+        )
+        self.assertEqual([c.kwargs.get("pessoal") for c in ler.call_args_list], [False, True])
+
+    @override_settings(
+        COMPROVANTES_EMAIL="lojas@teste.local", COMPROVANTES_SENHA_APP="x",
+        COMPROVANTES_PESSOAL_EMAIL="pessoal@teste.local", COMPROVANTES_PESSOAL_SENHA_APP="y",
+    )
+    def test_falha_na_caixa_pessoal_nao_impede_a_das_lojas(self):
+        """A pessoal vem primeiro aqui de proposito: a das lojas tem que ser lida mesmo assim."""
+
+        def fabrica(endereco, senha):
+            if endereco == "pessoal@teste.local":
+                raise OSError("senha errada")
+            return CaixaFalsa({})
+
+        with mock.patch(
+            "app.management.commands.ler_caixa_de_comprovantes.CaixaImap", side_effect=fabrica
+        ), mock.patch(
+            "app.management.commands.ler_caixa_de_comprovantes.ler_caixa",
+            wraps=ler_caixa,
+        ) as ler, mock.patch(
+            "app.management.commands.ler_caixa_de_comprovantes.Command.caixas",
+            return_value=[("pessoal@teste.local", "y", True), ("lojas@teste.local", "x", False)],
+        ):
+            call_command("ler_caixa_de_comprovantes", stdout=StringIO())
+        self.assertEqual([c.kwargs.get("pessoal") for c in ler.call_args_list], [False])
+
+    @override_settings(
+        COMPROVANTES_EMAIL="lojas@teste.local", COMPROVANTES_SENHA_APP="x",
+        COMPROVANTES_PESSOAL_EMAIL="", COMPROVANTES_PESSOAL_SENHA_APP="",
+    )
+    def test_caixa_pessoal_sem_variaveis_e_pulada(self):
+        with mock.patch(
+            "app.management.commands.ler_caixa_de_comprovantes.CaixaImap",
+            side_effect=lambda e, s: CaixaFalsa({}),
+        ) as fabrica:
+            call_command("ler_caixa_de_comprovantes", stdout=StringIO())
+        self.assertEqual([c.args for c in fabrica.call_args_list], [("lojas@teste.local", "x")])

@@ -176,6 +176,19 @@ class RegistrarTests(TestCase):
         )
         self.assertEqual(self.registrar().elemento, aluguel)
 
+    def test_pessoal_nao_recebe_categoria_sugerida(self):
+        """Mercado e farmacia nao sao despesa da loja: a regra do recebedor nao vale."""
+        garantir_plano_de_contas(self.conta)
+        aluguel = ElementoDeDespesa.objects.get(grupo__conta=self.conta, nome="Aluguel")
+        aprender_categoria(
+            Comprovante(
+                conta=self.conta, recebedor_normalizado="MARIA DA SILVA", elemento=aluguel
+            )
+        )
+        comprovante = self.registrar(pessoal=True)
+        self.assertTrue(comprovante.pessoal)
+        self.assertIsNone(comprovante.elemento)
+
     def test_id_com_espaco_ou_quebra_de_linha_e_o_mesmo_id(self):
         """Revisao final: o ID do PicPay vem quebrado em duas linhas no PDF."""
         self.registrar(leitura(id_transacao="E00000000202610130000aaaa0001"))

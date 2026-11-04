@@ -38,24 +38,33 @@ class Command(BaseCommand):
                 return
             time.sleep(intervalo)
 
+    def caixas(self):
+        """(endereco, senha, pessoal) de cada caixa: a das lojas e a do gasto pessoal."""
+        return [
+            (settings.COMPROVANTES_EMAIL, settings.COMPROVANTES_SENHA_APP, False),
+            (settings.COMPROVANTES_PESSOAL_EMAIL, settings.COMPROVANTES_PESSOAL_SENHA_APP, True),
+        ]
+
     def uma_volta(self):
-        endereco = settings.COMPROVANTES_EMAIL
-        senha = settings.COMPROVANTES_SENHA_APP
-        if not endereco or not senha:
-            logger.warning("COMPROVANTES_EMAIL ou COMPROVANTES_SENHA_APP vazios.")
-            self.stdout.write("Caixa de comprovantes não configurada.")
-            return
-        try:
-            caixa = CaixaImap(endereco, senha)
+        for endereco, senha, pessoal in self.caixas():
+            nome = "pessoal" if pessoal else "lojas"
+            if not endereco or not senha:
+                logger.warning("Caixa de comprovantes (%s) sem endereco ou senha.", nome)
+                self.stdout.write(f"{nome}: caixa de comprovantes não configurada.")
+                continue
+            # Cada caixa no seu try: senha errada na pessoal nao pode parar a
+            # entrada dos comprovantes das lojas, nem o contrario.
             try:
-                resumo = ler_caixa(caixa)
-            finally:
-                caixa.fechar()
-        except Exception:
-            # Uma volta ruim (rede, Gmail fora) nao pode matar o servico.
-            logger.exception("Falha ao ler a caixa de comprovantes.")
-            return
-        self.stdout.write(
-            f"{resumo.emails} e-mails, {resumo.comprovantes} comprovantes, "
-            f"{resumo.ignorados} ignorados, {resumo.falhas} com falha."
-        )
+                caixa = CaixaImap(endereco, senha)
+                try:
+                    resumo = ler_caixa(caixa, pessoal=pessoal)
+                finally:
+                    caixa.fechar()
+            except Exception:
+                # Uma volta ruim (rede, Gmail fora) nao pode matar o servico.
+                logger.exception("Falha ao ler a caixa de comprovantes (%s).", nome)
+                continue
+            self.stdout.write(
+                f"{nome}: {resumo.emails} e-mails, {resumo.comprovantes} comprovantes, "
+                f"{resumo.ignorados} ignorados, {resumo.falhas} com falha."
+            )

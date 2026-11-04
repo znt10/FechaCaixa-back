@@ -60,8 +60,11 @@ class ResumoDaLeitura:
     falhas: int = 0
 
 
-def ler_caixa(caixa, ler=ler_arquivo):
-    estado, _ = LeituraDaCaixa.objects.get_or_create(pk=1)
+def ler_caixa(caixa, ler=ler_arquivo, pessoal=False):
+    """`pessoal`: a caixa do gasto pessoal. Tudo o que vem dela entra pessoal."""
+    estado, _ = LeituraDaCaixa.objects.get_or_create(
+        caixa=LeituraDaCaixa.Caixa.PESSOAL if pessoal else LeituraDaCaixa.Caixa.LOJAS
+    )
     validade, proximo = caixa.estado()
 
     if estado.ultimo_uid is None or estado.uid_validade != validade:
@@ -80,7 +83,9 @@ def ler_caixa(caixa, ler=ler_arquivo):
         resumo.emails += 1
         try:
             mensagem = email.message_from_bytes(bruto, policy=policy.default)
-            criados = processar_mensagem(mensagem, uid=uid, validade=validade, ler=ler)
+            criados = processar_mensagem(
+                mensagem, uid=uid, validade=validade, ler=ler, pessoal=pessoal
+            )
         except Exception:
             # A caixa e uma so: um e-mail ruim preso aqui pararia a entrada de
             # comprovantes de todas as empresas, tentando de novo a cada volta.
@@ -165,7 +170,7 @@ def anexos_de(mensagem):
         yield parte.get_filename() or f"comprovante.{tipo.split('/')[1]}", tipo, conteudo
 
 
-def processar_mensagem(mensagem, *, uid, validade, ler=ler_arquivo):
+def processar_mensagem(mensagem, *, uid, validade, ler=ler_arquivo, pessoal=False):
     """Quantos comprovantes entraram, ou None se o e-mail nao e de ninguem."""
     remetente = remetente_de(mensagem)
     cadastro = (
@@ -198,6 +203,7 @@ def processar_mensagem(mensagem, *, uid, validade, ler=ler_arquivo):
                 email_message_id=message_id,
                 indice_anexo=indice,
                 ler=ler,
+                pessoal=pessoal,
             )
         except NaoEComprovante:
             # Um curriculo junto do Pix: pula este anexo, o e-mail fica no Gmail.
