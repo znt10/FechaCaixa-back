@@ -117,6 +117,7 @@ services:
       # Comprovantes: leitura do envio pelo site (Haiku). Ver docs/DEPLOY-COOLIFY.md.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       COMPROVANTES_EMAIL: ${COMPROVANTES_EMAIL:-}
+      COMPROVANTES_PESSOAL_EMAIL: ${COMPROVANTES_PESSOAL_EMAIL:-}
       # Mensalidade: a chave Pix, o nome e a cidade vao dentro do QR Code (dado
       # pessoal do dono, por isso so no ambiente). Sem PIX_CHAVE a tela diz que
       # o Pix nao foi configurado; a regra de bloqueio nao depende dele.
@@ -161,6 +162,8 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       COMPROVANTES_EMAIL: ${COMPROVANTES_EMAIL:-}
       COMPROVANTES_SENHA_APP: ${COMPROVANTES_SENHA_APP:-}
+      COMPROVANTES_PESSOAL_EMAIL: ${COMPROVANTES_PESSOAL_EMAIL:-}
+      COMPROVANTES_PESSOAL_SENHA_APP: ${COMPROVANTES_PESSOAL_SENHA_APP:-}
 
   # Busca o extrato das conexoes da Pluggy a cada 6 h. Mesma imagem da
   # api, sem gunicorn: o entrypoint fica de fora (collectstatic, migrate e

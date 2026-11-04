@@ -71,6 +71,8 @@ sobe, avisa no log e não lê nada.
 | `ANTHROPIC_API_KEY` | chave da API da Anthropic (console.anthropic.com, organização FechaCaixa). Sem ela, todo comprovante entra em "conferir" |
 | `COMPROVANTES_EMAIL` | `fechacaixacomprovante@gmail.com` |
 | `COMPROVANTES_SENHA_APP` | a senha de app do Gmail (myaccount.google.com/apppasswords) |
+| `COMPROVANTES_PESSOAL_EMAIL` | `pessoalfechacaixa@gmail.com` (gasto pessoal, tela "Comprovantes CPF"; vazia = não lê) |
+| `COMPROVANTES_PESSOAL_SENHA_APP` | a senha de app dessa segunda conta do Gmail |
 
 O banco não tem variável de endereço: `DB_HOST=db` é fixo no compose, porque só
 faz sentido dentro desta rede.
