@@ -16,6 +16,7 @@ CONFIGURACAO_DO_FORMULARIO = [
     "vendas_ativas",
     "nome_dos_itens",
     "boletos_ativos",
+    "comprovantes_pessoais_ativos",
 ]
 
 

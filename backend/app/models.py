@@ -98,6 +98,13 @@ class Conta(BaseModel):
     # na loja. Liga a pergunta do formulario e a aba Boletos juntas.
     boletos_ativos = models.BooleanField("Usa boletos a pagar", default=False)
 
+    # Gasto pessoal de quem manda na empresa, mandado para a caixa propria
+    # (COMPROVANTES_PESSOAL_EMAIL). Liga a tela "Comprovantes CPF"; desligado,
+    # o que chegar la entra do mesmo jeito, so que fica sem tela.
+    comprovantes_pessoais_ativos = models.BooleanField(
+        "Usa comprovantes pessoais (CPF)", default=False
+    )
+
     # Como a empresa chama o que vende, no plural: entra no meio de frase
     # ("Houve perda de paes?", "Catalogo de paes"). Plural so, e nao
     # singular + genero: "Houve perda de ..." dispensa o "algum/alguma".
@@ -1606,6 +1613,10 @@ class Comprovante(BaseModel):
         Loja, on_delete=models.PROTECT, null=True, blank=True, related_name="comprovantes"
     )
     origem = models.CharField(max_length=10, choices=Origem.choices)
+    # Gasto pessoal, e nao da loja: decidido por quem mandou (a caixa pessoal
+    # ou a tela CPF), e nao pela conta que pagou. Nunca soma em loja nem na
+    # empresa, mesmo com `loja` preenchida (ai ela diz de que conta saiu).
+    pessoal = models.BooleanField(default=False)
     situacao = models.CharField(
         max_length=12, choices=Situacao.choices, default=Situacao.CONFERIR
     )
@@ -1701,12 +1712,20 @@ class RegraDeCategoriaDoRecebedor(BaseModel):
 
 
 class LeituraDaCaixa(models.Model):
-    """Ate onde a caixa de comprovantes ja foi lida. Uma linha so (pk=1).
+    """Ate onde cada caixa de comprovantes ja foi lida. Uma linha por caixa.
 
     Pelo UID do IMAP, e nao por "nao lidos": um e-mail aberto no Gmail antes
     da volta de 5 minutos seria pulado, e a caixa ja tinha 985 e-mails antigos.
     """
 
+    class Caixa(models.TextChoices):
+        LOJAS = "LOJAS", "Lojas"
+        PESSOAL = "PESSOAL", "Pessoal"
+
+    # O default leva a linha que ja existia (pk=1) para a caixa das lojas.
+    caixa = models.CharField(
+        max_length=10, choices=Caixa.choices, default=Caixa.LOJAS, unique=True
+    )
     uid_validade = models.BigIntegerField(null=True, blank=True)
     ultimo_uid = models.BigIntegerField(null=True, blank=True)
 

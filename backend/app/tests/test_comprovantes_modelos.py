@@ -68,3 +68,19 @@ class ModuloNoMeTests(TestCase):
 
         self.assertEqual(resposta.status_code, 200)
         self.assertTrue(resposta.data["modulos"]["comprovantes"])
+
+
+class ComprovantesPessoaisModeloTests(TestCase):
+    def test_comprovante_nasce_de_loja(self):
+        comprovante = Comprovante.objects.create(conta=conta_padrao(), origem="SITE")
+        self.assertFalse(comprovante.pessoal)
+
+    def test_empresa_nasce_sem_comprovantes_pessoais(self):
+        self.assertFalse(conta_padrao().comprovantes_pessoais_ativos)
+
+    def test_uma_leitura_por_caixa(self):
+        LeituraDaCaixa.objects.create(caixa=LeituraDaCaixa.Caixa.LOJAS)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            LeituraDaCaixa.objects.create(caixa=LeituraDaCaixa.Caixa.LOJAS)
+        LeituraDaCaixa.objects.create(caixa=LeituraDaCaixa.Caixa.PESSOAL)
+        self.assertEqual(LeituraDaCaixa.objects.count(), 2)

@@ -309,4 +309,8 @@ PIX_CIDADE = os.getenv("PIX_CIDADE", "")
 # ANTHROPIC_API_KEY nao passa por aqui: o SDK le direto do ambiente.
 COMPROVANTES_EMAIL = os.getenv("COMPROVANTES_EMAIL", "")
 COMPROVANTES_SENHA_APP = os.getenv("COMPROVANTES_SENHA_APP", "").replace(" ", "")
+# A segunda caixa: gasto pessoal (tela "Comprovantes CPF"). Vazias = so a
+# caixa das lojas e lida.
+COMPROVANTES_PESSOAL_EMAIL = os.getenv("COMPROVANTES_PESSOAL_EMAIL", "")
+COMPROVANTES_PESSOAL_SENHA_APP = os.getenv("COMPROVANTES_PESSOAL_SENHA_APP", "").replace(" ", "")
 COMPROVANTES_MODELO = os.getenv("COMPROVANTES_MODELO", "claude-haiku-5-5")
