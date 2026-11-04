@@ -6,7 +6,7 @@ from .notas import ElementoPorIdPublico
 
 # O que a pessoa corrige na mao. O resto veio do comprovante e e a prova do
 # gasto: so leitura.
-CAMPOS_EDITAVEIS = ["valor", "data_hora", "recebedor_nome", "loja", "elemento"]
+CAMPOS_EDITAVEIS = ["valor", "data_hora", "recebedor_nome", "loja", "elemento", "pessoal"]
 
 
 class ComprovanteSerializer(serializers.ModelSerializer):
@@ -32,6 +32,7 @@ class ComprovanteSerializer(serializers.ModelSerializer):
             "situacao",
             "motivo",
             "origem",
+            "pessoal",
             "valor",
             "data_hora",
             "id_transacao",

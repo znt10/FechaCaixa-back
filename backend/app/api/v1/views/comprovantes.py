@@ -111,8 +111,11 @@ class ComprovanteViewSet(
         return base.filter(conta=conta)
 
     def recorte(self, queryset):
-        """Periodo e loja: o que vale para a lista E para os totais."""
+        """Periodo, loja e lado (pessoal ou lojas): o que vale para a lista E para os totais."""
         params = self.request.query_params
+        # Sem `pessoal=1`, so os de loja: o gasto pessoal nunca soma na loja nem
+        # na empresa, nem quando foi pago com a conta de uma loja.
+        queryset = queryset.filter(pessoal=params.get("pessoal") == "1")
         de, ate = _data(params, "de"), _data(params, "ate")
         # Sem data lida (para conferir) entra em qualquer periodo: sumir do
         # filtro seria perder o comprovante de vista.
@@ -152,16 +155,22 @@ class ComprovanteViewSet(
             raise ValidationError("Esta loja e de outra empresa.")
         if elemento is not None and elemento.grupo.conta_id != conta.id:
             raise ValidationError("Esta categoria e de outra empresa.")
+        pessoal = dados.get("pessoal", serializer.instance.pessoal)
+        if pessoal and elemento is not None:
+            raise ValidationError("Comprovante pessoal não tem categoria.")
 
         editados = set(serializer.instance.campos_editados) | (
-            set(dados) - {"elemento"}  # categoria nao e "correcao da leitura"
+            # Categoria e lado (pessoal/lojas) nao sao "correcao da leitura".
+            set(dados) - {"elemento", "pessoal"}
         )
         extra = {"campos_editados": sorted(editados)}
+        if pessoal:
+            extra["elemento"] = None
         if "recebedor_nome" in dados:
             extra["recebedor_normalizado"] = normalizar_nome(dados["recebedor_nome"])[:200]
         comprovante = serializer.save(**extra)
 
-        if "elemento" in dados:
+        if "elemento" in dados and not comprovante.pessoal:
             aprender_categoria(comprovante)
 
     @action(detail=True, methods=["post"])
@@ -229,6 +238,8 @@ class ComprovanteViewSet(
             if loja is None:
                 raise ValidationError({"error": "Esta loja nao existe nesta empresa."})
 
+        pessoal = str(request.data.get("pessoal", "")).lower() in {"1", "true"}
+
         try:
             comprovante = registrar_comprovante(
                 conta,
@@ -239,6 +250,7 @@ class ComprovanteViewSet(
                 enviado_por=request.user,
                 loja=loja,
                 ler=ler_arquivo,
+                pessoal=pessoal,
             )
         except NaoEComprovante:
             raise ValidationError(
@@ -253,6 +265,7 @@ class ComprovanteViewSet(
     def configuracao(self, request):
         return Response({
             "endereco": settings.COMPROVANTES_EMAIL,
+            "endereco_pessoal": settings.COMPROVANTES_PESSOAL_EMAIL,
             "leitura_ligada": bool(os.getenv("ANTHROPIC_API_KEY")),
         })
 

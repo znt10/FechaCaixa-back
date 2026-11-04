@@ -34,6 +34,14 @@ class EnviarPeloSiteTests(BaseApi):
             format="multipart",
         )
 
+    def test_enviar_pessoal_cria_pessoal(self):
+        resposta = self.enviar(pessoal="true")
+        self.assertEqual(resposta.status_code, 201, resposta.data)
+        self.assertTrue(resposta.data["pessoal"])
+
+    def test_enviar_sem_pessoal_cria_de_loja(self):
+        self.assertFalse(self.enviar().data["pessoal"])
+
     def test_envio_lido_por_inteiro_volta_ok(self):
         resposta = self.enviar()
         self.assertEqual(resposta.status_code, 201, resposta.data)
@@ -85,7 +93,17 @@ class ConfiguracaoTests(BaseApi):
     @mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "x"})
     def test_mostra_o_endereco_e_se_a_leitura_esta_ligada(self):
         dados = self.api.get("/api/v1/comprovantes/configuracao/").data
-        self.assertEqual(dados, {"endereco": "caixa@teste.local", "leitura_ligada": True})
+        self.assertEqual(
+            dados,
+            {"endereco": "caixa@teste.local", "endereco_pessoal": "", "leitura_ligada": True},
+        )
+
+    @override_settings(
+        COMPROVANTES_EMAIL="caixa@teste.local", COMPROVANTES_PESSOAL_EMAIL="pessoal@teste.local"
+    )
+    def test_mostra_o_endereco_pessoal(self):
+        dados = self.api.get("/api/v1/comprovantes/configuracao/").data
+        self.assertEqual(dados["endereco_pessoal"], "pessoal@teste.local")
 
 
 class RemetentesTests(BaseApi):

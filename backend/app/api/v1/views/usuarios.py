@@ -91,6 +91,11 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             conta and conta.modulo_comprovantes_ativo
         )
         tem_boletos = request.user.is_superuser or bool(conta and conta.boletos_ativos)
+        # A tela "Comprovantes CPF" vive dentro da area de comprovantes: sem o
+        # modulo, a opcao ligada nao leva a lugar nenhum.
+        tem_comprovantes_pessoais = request.user.is_superuser or bool(
+            conta and conta.modulo_comprovantes_ativo and conta.comprovantes_pessoais_ativos
+        )
 
         return Response({
             "id": request.user.id,
@@ -106,6 +111,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
                 "banco": tem_banco,
                 "comprovantes": tem_comprovantes,
                 "boletos": tem_boletos,
+                "comprovantes_pessoais": tem_comprovantes_pessoais,
             },
         })
 

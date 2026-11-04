@@ -214,3 +214,80 @@ class AcoesTests(BaseApi):
         comprovante = self.criar()
         resposta = self.api.get(f"/api/v1/comprovantes/{comprovante.public_id}/arquivo/")
         self.assertEqual(resposta.status_code, 404)
+
+
+class ComprovantesPessoaisApiTests(BaseApi):
+    URL = "/api/v1/comprovantes/"
+
+    def test_lista_padrao_nao_mostra_pessoais(self):
+        de_loja = self.criar()
+        self.criar(pessoal=True)
+        ids = [item["id"] for item in lista(self.api.get(self.URL))]
+        self.assertEqual(ids, [str(de_loja.public_id)])
+
+    def test_lista_pessoal_so_mostra_pessoais(self):
+        self.criar()
+        pessoal = self.criar(pessoal=True)
+        resposta = lista(self.api.get(self.URL, {"pessoal": "1"}))
+        self.assertEqual([item["id"] for item in resposta], [str(pessoal.public_id)])
+        self.assertTrue(resposta[0]["pessoal"])
+
+    def test_pessoal_com_loja_nao_soma_na_loja(self):
+        """Pago com a conta da loja, mas pessoal: nao entra no total da loja."""
+        self.criar(pessoal=True, loja=self.loja, valor=Decimal("500.00"))
+        self.criar(loja=self.loja, valor=Decimal("10.00"))
+
+        totais = self.api.get(self.URL, {"loja": str(self.loja.public_id)}).data["totais"]
+        self.assertEqual(totais["valor"], "10.00")
+        self.assertEqual(
+            {item["nome"]: item["valor"] for item in totais["por_loja"]}, {"Loja A": "10.00"}
+        )
+        self.assertEqual(self.api.get(self.URL).data["totais"]["valor"], "10.00")
+
+    def test_totais_do_pessoal(self):
+        self.criar(pessoal=True, loja=self.loja, valor=Decimal("500.00"))
+        self.criar(valor=Decimal("10.00"))
+        totais = self.api.get(self.URL, {"pessoal": "1"}).data["totais"]
+        self.assertEqual(totais["valor"], "500.00")
+
+    def test_mover_para_pessoal_limpa_categoria_e_nao_ensina(self):
+        garantir_plano_de_contas(self.conta)
+        aluguel = ElementoDeDespesa.objects.get(grupo__conta=self.conta, nome="Aluguel")
+        comprovante = self.criar(elemento=aluguel, recebedor_normalizado="MERCADO X")
+
+        resposta = self.api.patch(
+            f"{self.URL}{comprovante.public_id}/", {"pessoal": True}, format="json"
+        )
+
+        self.assertEqual(resposta.status_code, 200, resposta.data)
+        comprovante.refresh_from_db()
+        self.assertTrue(comprovante.pessoal)
+        self.assertIsNone(comprovante.elemento)
+        self.assertFalse(RegraDeCategoriaDoRecebedor.objects.exists())
+
+    def test_pessoal_nao_aceita_categoria(self):
+        garantir_plano_de_contas(self.conta)
+        aluguel = ElementoDeDespesa.objects.get(grupo__conta=self.conta, nome="Aluguel")
+        comprovante = self.criar(pessoal=True, recebedor_normalizado="MERCADO X")
+
+        resposta = self.api.patch(
+            f"{self.URL}{comprovante.public_id}/",
+            {"elemento": str(aluguel.public_id)},
+            format="json",
+        )
+
+        self.assertEqual(resposta.status_code, 400)
+        self.assertIn("Comprovante pessoal não tem categoria.", str(resposta.data))
+        self.assertFalse(RegraDeCategoriaDoRecebedor.objects.exists())
+
+    def test_voltar_para_lojas(self):
+        comprovante = self.criar(pessoal=True)
+        self.api.patch(f"{self.URL}{comprovante.public_id}/", {"pessoal": False}, format="json")
+        comprovante.refresh_from_db()
+        self.assertFalse(comprovante.pessoal)
+
+    def test_mover_nao_conta_como_correcao_da_leitura(self):
+        comprovante = self.criar()
+        self.api.patch(f"{self.URL}{comprovante.public_id}/", {"pessoal": True}, format="json")
+        comprovante.refresh_from_db()
+        self.assertNotIn("pessoal", comprovante.campos_editados)

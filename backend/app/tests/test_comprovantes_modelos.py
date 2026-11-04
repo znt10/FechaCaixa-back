@@ -70,6 +70,33 @@ class ModuloNoMeTests(TestCase):
         self.assertTrue(resposta.data["modulos"]["comprovantes"])
 
 
+class ComprovantesPessoaisNoMeTests(TestCase):
+    def me(self, *, modulo, pessoais, super=False):
+        Group.objects.get_or_create(name="Gerente")
+        conta = conta_padrao()
+        conta.modulo_comprovantes_ativo = modulo
+        conta.comprovantes_pessoais_ativos = pessoais
+        conta.save()
+        user = User.objects.create_user(username="g@x.com", password="123456", is_superuser=super)
+        user.groups.add(Group.objects.get(name="Gerente"))
+        vincular_conta(user, conta)
+        cliente = APIClient()
+        cliente.force_authenticate(user)
+        return cliente.get("/api/v1/user/me/").data["modulos"]["comprovantes_pessoais"]
+
+    def test_tudo_ligado(self):
+        self.assertIs(self.me(modulo=True, pessoais=True), True)
+
+    def test_so_o_modulo_ligado(self):
+        self.assertIs(self.me(modulo=True, pessoais=False), False)
+
+    def test_pessoais_sem_o_modulo(self):
+        self.assertIs(self.me(modulo=False, pessoais=True), False)
+
+    def test_superusuario(self):
+        self.assertIs(self.me(modulo=False, pessoais=False, super=True), True)
+
+
 class ComprovantesPessoaisModeloTests(TestCase):
     def test_comprovante_nasce_de_loja(self):
         comprovante = Comprovante.objects.create(conta=conta_padrao(), origem="SITE")
