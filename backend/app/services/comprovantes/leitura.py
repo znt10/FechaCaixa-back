@@ -32,9 +32,10 @@ ESQUEMA = {
     "type": "object",
     "properties": {
         "e_comprovante": {"type": "boolean"},
+        "e_anotacao": {"type": "boolean"},
         **{campo: _TEXTO_OU_NULO for campo in CAMPOS},
     },
-    "required": ["e_comprovante", *CAMPOS],
+    "required": ["e_comprovante", "e_anotacao", *CAMPOS],
     "additionalProperties": False,
 }
 
@@ -45,7 +46,17 @@ Extraia os campos exatamente como aparecem. Use null para o que não aparece no 
 - pagador = quem pagou (origem, "De"); recebedor = quem recebeu (destino, "Para").
 - documento: CPF ou CNPJ como aparece, inclusive mascarado.
 - agencia e conta: só se aparecerem.
-- e_comprovante: false se o arquivo não for um comprovante de pagamento."""
+- e_comprovante: false se o arquivo não for um comprovante de pagamento.
+
+Pagamento em dinheiro não tem comprovante: a pessoa anota à mão num papel o valor,
+a data e o que foi pago, e manda a foto. Essa anotação também é comprovante:
+- e_anotacao: true só para anotação à mão; false para comprovante de banco ou lotérica.
+- valor: escrito no costume brasileiro ("3.400" é três mil e quatrocentos, "34,00"
+  é trinta e quatro). Se algum dígito não der para ler com certeza, null: não chute.
+- data_hora: só a data, ex. "2026-11-05"; null se não der para ler.
+- recebedor_nome: o que foi pago, como está escrito, com vários itens separados por
+  vírgula e espaço (ex. "Ovo", "Frutas, Ovo").
+- os outros campos: null."""
 
 
 class LeituraIndisponivel(Exception):

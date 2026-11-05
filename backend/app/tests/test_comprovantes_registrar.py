@@ -1,9 +1,11 @@
 import io
+from datetime import date, datetime
 from decimal import Decimal
 from unittest import mock
 
 from django.db import IntegrityError
 from django.test import TestCase
+from django.utils import timezone
 from PIL import Image
 
 from app.models import Comprovante, Conta, ElementoDeDespesa
@@ -202,3 +204,66 @@ class RegistrarTests(TestCase):
             side_effect=IntegrityError("duplicado"),
         ):
             self.assertIsNone(self.registrar())
+
+
+def anotacao(**campos):
+    """A foto de um bilhete a mao: pagamento em dinheiro, sem banco nem ID."""
+    base = {campo: None for campo in CAMPOS}
+    base.update(
+        e_comprovante=True,
+        e_anotacao=True,
+        valor="3400.00",
+        data_hora="2026-11-05",
+        recebedor_nome="Ovo",
+    )
+    base.update(campos)
+    return base
+
+
+class AnotacaoAMaoTests(TestCase):
+    """Pago em dinheiro nao tem comprovante: a dona anota valor, data e o que foi."""
+
+    def setUp(self):
+        self.conta = conta_padrao()
+        self.loja = criar_loja(
+            nome_loja="Loja A", cidade="Patos", endereco="Rua 1", cnpj=CNPJ_DA_LOJA
+        )
+
+    def registrar(self, dados, **extra):
+        return registrar_comprovante(
+            self.conta, foto(), "image/png", "bilhete.png",
+            origem="SITE", ler=leitor(dados), **extra,
+        )
+
+    def test_valor_legivel_entra_ok_com_o_que_foi(self):
+        comprovante = self.registrar(anotacao(), loja=self.loja)
+        self.assertEqual(comprovante.situacao, Comprovante.Situacao.OK)
+        self.assertEqual(comprovante.valor, Decimal("3400.00"))
+        self.assertEqual(comprovante.recebedor_nome, "Ovo")
+        self.assertEqual(comprovante.loja, self.loja)
+
+    def test_a_data_e_a_do_bilhete_e_a_hora_e_a_do_envio(self):
+        envio = timezone.make_aware(datetime(2026, 11, 6, 14, 37, 12))
+        with mock.patch("app.services.comprovantes.registrar.timezone.now", return_value=envio):
+            comprovante = self.registrar(anotacao())
+        local = timezone.localtime(comprovante.data_hora)
+        self.assertEqual(local.date(), date(2026, 11, 5))
+        self.assertEqual((local.hour, local.minute), (14, 37))
+
+    def test_valor_ilegivel_fica_em_duvida(self):
+        comprovante = self.registrar(anotacao(valor=None))
+        self.assertEqual(comprovante.situacao, Comprovante.Situacao.CONFERIR)
+        self.assertEqual(comprovante.motivo, "Anotação à mão: não deu para ler o valor.")
+
+    def test_data_ilegivel_fica_em_duvida(self):
+        comprovante = self.registrar(anotacao(data_hora=None))
+        self.assertEqual(comprovante.situacao, Comprovante.Situacao.CONFERIR)
+        self.assertEqual(comprovante.motivo, "Anotação à mão: não deu para ler a data.")
+
+    def test_o_que_foi_aprende_a_categoria(self):
+        garantir_plano_de_contas(self.conta)
+        aluguel = ElementoDeDespesa.objects.get(grupo__conta=self.conta, nome="Aluguel")
+        aprender_categoria(
+            Comprovante(conta=self.conta, recebedor_normalizado="OVO", elemento=aluguel)
+        )
+        self.assertEqual(self.registrar(anotacao()).elemento, aluguel)
