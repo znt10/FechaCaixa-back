@@ -99,3 +99,14 @@ class EsquemaTests(SimpleTestCase):
 
         self.assertIn("e_anotacao", ESQUEMA["required"])
         self.assertIn("à mão", PROMPT)
+
+
+class PromptDoIdTests(SimpleTestCase):
+    def test_o_prompt_diz_qual_numero_e_o_id(self):
+        """O Bradesco tem Identificacao, No de controle e Documento: a leitura
+        precisa saber que o ID e o E2E do Pix, e o que nao usar."""
+        from app.services.comprovantes.leitura import PROMPT
+
+        self.assertIn("id_transacao", PROMPT)
+        for texto in ("Identificação", "começa com E", "Nº de controle", "Documento"):
+            self.assertIn(texto, PROMPT)

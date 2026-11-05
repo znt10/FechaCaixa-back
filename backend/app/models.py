@@ -1654,6 +1654,10 @@ class Comprovante(BaseModel):
     arquivo_nome = models.CharField(max_length=255, blank=True)
 
     leitura_bruta = models.JSONField(null=True, blank=True)
+    # SHA-256 do arquivo como chegou: o mesmo arquivo de novo na mesma empresa
+    # e repetido, mesmo que a leitura tire outro ID dele (o Bradesco mostra tres
+    # numeros com cara de ID).
+    arquivo_hash = models.CharField(max_length=64, blank=True, db_index=True)
     # Os campos que alguem corrigiu na mao: leitura nenhuma sobrescreve.
     campos_editados = models.JSONField(default=list, blank=True)
 
