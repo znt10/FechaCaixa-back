@@ -8,6 +8,7 @@ A excecao e o arquivo que a leitura diz nao ser comprovante (um curriculo, um
 boleto em aberto): NaoEComprovante, e nada e gravado.
 """
 
+import hashlib
 import re
 
 from django.db import IntegrityError, transaction
@@ -57,6 +58,7 @@ def registrar_comprovante(
 ):
     comprovante = Comprovante(
         conta=conta,
+        arquivo_hash=hashlib.sha256(conteudo).hexdigest(),
         pessoal=pessoal,
         origem=origem,
         situacao=CONFERIR,
@@ -139,7 +141,36 @@ def _situacao(comprovante, dados, recebido):
         return f"{prefixo}ão deu para ler a data.", CONFERIR
     if recebido:
         return "Parece Pix recebido: o dinheiro entrou na loja.", CONFERIR
+    if _parece_repetido(comprovante):
+        return REPETIDO, CONFERIR
     return "", OK
+
+
+REPETIDO = (
+    "Parece repetido de outro comprovante (mesmo valor, data e recebedor). "
+    "Confira antes de somar."
+)
+
+
+def _parece_repetido(comprovante):
+    """Outro comprovante da empresa com o mesmo valor, data/hora e recebedor.
+
+    Pega o mesmo Pix em arquivos diferentes (print e PDF) e a leitura que tirou
+    outro ID. Nao recusa: dois Pix iguais no mesmo minuto existem; so nao soma
+    ate alguem olhar. O descartado nao conta, ja saiu do total.
+    """
+    if not comprovante.recebedor_normalizado:
+        return False
+    return (
+        Comprovante.objects.filter(
+            conta=comprovante.conta,
+            valor=comprovante.valor,
+            data_hora=comprovante.data_hora,
+            recebedor_normalizado=comprovante.recebedor_normalizado,
+        )
+        .exclude(situacao=Comprovante.Situacao.DESCARTADO)
+        .exists()
+    )
 
 
 def _gravar(comprovante):
@@ -149,6 +180,10 @@ def _gravar(comprovante):
             conta=comprovante.conta, id_transacao=comprovante.id_transacao
         ).exists()
     ):
+        return None
+    if Comprovante.objects.filter(
+        conta=comprovante.conta, arquivo_hash=comprovante.arquivo_hash
+    ).exists():
         return None
     try:
         # Savepoint: a unicidade do banco e a guarda contra dois envios

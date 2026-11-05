@@ -45,6 +45,11 @@ Extraia os campos exatamente como aparecem. Use null para o que não aparece no 
 - data_hora: ISO 8601 sem fuso, ex. "2026-10-13T10:03:22".
 - pagador = quem pagou (origem, "De"); recebedor = quem recebeu (destino, "Para").
 - documento: CPF ou CNPJ como aparece, inclusive mascarado.
+- id_transacao: no Pix, o identificador da transação (E2E): 32 caracteres, começa com E
+  seguido de números (ex. "E12345678202611031704Ab1Cd2Ef3Gh"). Aparece como "ID da
+  transação", "Identificação", "ID/Transação" ou "E2E". Copie letra por letra.
+  NÃO use Nº de controle, Documento, autenticação, protocolo ou NSU: esses não são o
+  ID. Sem o E2E (TED, boleto, lotérica), use o código de autenticação; sem nenhum, null.
 - agencia e conta: só se aparecerem.
 - e_comprovante: false se o arquivo não for um comprovante de pagamento.
 

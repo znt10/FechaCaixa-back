@@ -1,4 +1,5 @@
 import io
+import itertools
 from datetime import date, datetime
 from decimal import Decimal
 from unittest import mock
@@ -17,6 +18,7 @@ from app.services.plano_de_contas import garantir_plano_de_contas
 from .fabricas import conta_padrao, criar_loja
 
 CNPJ_DA_LOJA = "11222333000181"
+ARQUIVOS = itertools.count()
 
 
 def leitura(**campos):
@@ -55,10 +57,13 @@ class RegistrarTests(TestCase):
             nome_loja="Loja A", cidade="Patos", endereco="Rua 1", cnpj=CNPJ_DA_LOJA
         )
 
-    def registrar(self, dados=None, origem="EMAIL", **extra):
+    def registrar(self, dados=None, origem="EMAIL", conteudo=None, conta=None, **extra):
+        # Cada chamada com um arquivo proprio: o mesmo arquivo duas vezes e
+        # repetido por si so (test_mesmo_arquivo_*), e os outros testes nao
+        # sao sobre isso.
         return registrar_comprovante(
-            self.conta,
-            b"%PDF-1.4 inventado",
+            conta or self.conta,
+            conteudo or b"%PDF-1.4 inventado " + str(next(ARQUIVOS)).encode(),
             "application/pdf",
             "comprovante.pdf",
             origem=origem,
@@ -67,7 +72,7 @@ class RegistrarTests(TestCase):
         )
 
     def test_email_com_leitura_completa_entra_ok_na_loja(self):
-        comprovante = self.registrar()
+        comprovante = self.registrar(conteudo=b"%PDF-1.4 inventado")
         self.assertEqual(comprovante.situacao, Comprovante.Situacao.OK)
         self.assertEqual(comprovante.loja, self.loja)
         self.assertEqual(comprovante.valor, Decimal("129.80"))
@@ -267,3 +272,81 @@ class AnotacaoAMaoTests(TestCase):
             Comprovante(conta=self.conta, recebedor_normalizado="OVO", elemento=aluguel)
         )
         self.assertEqual(self.registrar(anotacao()).elemento, aluguel)
+
+
+class ComprovanteRepetidoTests(TestCase):
+    """O Bradesco mostra tres numeros com cara de ID (Identificacao, No de
+    controle, Documento) e a leitura pegava um diferente a cada envio: o mesmo
+    Pix entrava duas vezes, os dois OK."""
+
+    def setUp(self):
+        self.conta = conta_padrao()
+        criar_loja(nome_loja="Loja A", cidade="Patos", endereco="Rua 1", cnpj=CNPJ_DA_LOJA)
+
+    def registrar(self, dados=None, conteudo=None, conta=None):
+        return registrar_comprovante(
+            conta or self.conta,
+            conteudo or b"%PDF-1.4 " + str(next(ARQUIVOS)).encode(),
+            "application/pdf",
+            "comprovante.pdf",
+            origem="EMAIL",
+            ler=leitor(dados or leitura()),
+        )
+
+    def test_mesmo_arquivo_na_mesma_empresa_e_recusado(self):
+        """Mesmo PDF, IDs lidos diferentes: o arquivo ja diz que e repetido."""
+        self.registrar(leitura(id_transacao="E12345678202611031704Ab1Cd2Ef3Gh"), conteudo=b"%PDF bradesco")
+        self.assertIsNone(
+            self.registrar(leitura(id_transacao="900000000000000001"), conteudo=b"%PDF bradesco")
+        )
+        self.assertEqual(Comprovante.objects.count(), 1)
+
+    def test_mesmo_arquivo_em_outra_empresa_entra(self):
+        outra = Conta.objects.create(nome="Outra")
+        self.registrar(conteudo=b"%PDF bradesco")
+        self.assertIsNotNone(self.registrar(conteudo=b"%PDF bradesco", conta=outra))
+
+    def test_mesmos_dados_com_outro_id_vai_para_conferir(self):
+        """Arquivos diferentes (print e PDF do mesmo Pix) e ID lido diferente:
+        nao soma ate alguem olhar."""
+        primeiro = self.registrar(leitura(id_transacao="E12345678202611031704Ab1Cd2Ef3Gh"))
+        segundo = self.registrar(leitura(id_transacao="900000000000000001"))
+
+        self.assertEqual(primeiro.situacao, Comprovante.Situacao.OK)
+        self.assertEqual(segundo.situacao, Comprovante.Situacao.CONFERIR)
+        self.assertEqual(
+            segundo.motivo,
+            "Parece repetido de outro comprovante (mesmo valor, data e recebedor). "
+            "Confira antes de somar.",
+        )
+
+    def test_mesmos_dados_sem_id_vai_para_conferir(self):
+        self.registrar(leitura(id_transacao=None))
+        self.assertEqual(
+            self.registrar(leitura(id_transacao=None)).situacao, Comprovante.Situacao.CONFERIR
+        )
+
+    def test_repetido_de_um_descartado_entra_ok(self):
+        primeiro = self.registrar(leitura(id_transacao="A1"))
+        primeiro.situacao = Comprovante.Situacao.DESCARTADO
+        primeiro.save()
+        self.assertEqual(self.registrar(leitura(id_transacao="A2")).situacao, Comprovante.Situacao.OK)
+
+    def test_outro_valor_ou_outra_hora_entra_ok(self):
+        self.registrar(leitura(id_transacao="A1"))
+        self.assertEqual(
+            self.registrar(leitura(id_transacao="A2", valor="129.81")).situacao,
+            Comprovante.Situacao.OK,
+        )
+        self.assertEqual(
+            self.registrar(leitura(id_transacao="A3", data_hora="2026-10-13T10:04:22")).situacao,
+            Comprovante.Situacao.OK,
+        )
+
+    def test_repetido_em_outra_empresa_entra_ok(self):
+        outra = Conta.objects.create(nome="Outra")
+        self.registrar(leitura(id_transacao="A1"))
+        self.assertEqual(
+            self.registrar(leitura(id_transacao="A2"), conta=outra).situacao,
+            Comprovante.Situacao.OK,
+        )
