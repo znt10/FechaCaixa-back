@@ -10,7 +10,7 @@ a data. E a mesma criacao (mesmo serializer, mesmas regras de turno), com tres
 travas que so existem deste lado:
 
     escopo    -> a loja tem que ser da conta DELE, e nao a que o payload alega
-    limite    -> no maximo 30 dias para tras (o teto de "nao e futuro" ja existia)
+    limite    -> no maximo 180 dias (6 meses) para tras (o teto de "nao e futuro" ja existia)
     duplicata -> turno que ja tem lancamento nao aceita outro por cima
 
 As tres valem so aqui. O formulario da loja segue exatamente como estava: ele
@@ -34,10 +34,10 @@ URL = "/api/v1/fechamentos-caixa/"
 
 
 def dia_comum_recente(conta, dias_atras=1):
-    """Um dia passado, dentro dos 30, em que a loja abre manha E tarde.
+    """Um dia passado, dentro da janela, em que a loja abre manha E tarde.
 
     Nao da para fixar uma data no calendario como o resto da suite faz: o
-    limite de 30 dias e contado a partir de hoje, entao uma data fixa sai da
+    limite de 180 dias e contado a partir de hoje, entao uma data fixa sai da
     janela sozinha com o passar das semanas. Andar para tras pulando
     domingo e feriado mantem o teste falando de turno comum em qualquer dia
     que a suite rode.
@@ -123,11 +123,20 @@ class LancamentoPeloPainelTests(APITestCase):
         self.assertEqual(resp.status_code, 400, resp.data)
         self.assertFalse(FechamentoCaixa.objects.exists())
 
-    def test_recusa_dia_alem_do_limite_de_trinta(self):
-        """Repor dia esquecido e coisa de dias, nao de meses. Passados 30 dias
-        o caixa daquele dia ja virou relatorio fechado, e digitar 2019 por
-        engano no seletor de data nao pode virar lancamento."""
-        antigo = timezone.localdate() - timedelta(days=31)
+    def test_aceita_dia_de_cinco_meses_atras(self):
+        """A janela e de seis meses: um dia esquecido ha uns 150 dias ainda
+        se repoe pelo painel."""
+        dia = dia_comum_recente(self.conta, dias_atras=150)
+
+        resp = self.client.post(URL, self.payload(data=str(dia)), format="json")
+
+        self.assertEqual(resp.status_code, 201, resp.data)
+
+    def test_recusa_dia_alem_do_limite_de_seis_meses(self):
+        """Passados 180 dias o caixa daquele dia ja virou relatorio fechado,
+        e digitar 2019 por engano no seletor de data nao pode virar
+        lancamento."""
+        antigo = timezone.localdate() - timedelta(days=181)
 
         resp = self.client.post(URL, self.payload(data=str(antigo)), format="json")
 
