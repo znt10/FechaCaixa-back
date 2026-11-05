@@ -11,6 +11,7 @@ boleto em aberto): NaoEComprovante, e nada e gravado.
 import re
 
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 from app.models import Comprovante
 
@@ -96,6 +97,12 @@ def _aplicar_leitura(comprovante, dados, loja_escolhida):
     comprovante.leitura_bruta = dados
     comprovante.valor = valor_decimal(dados.get("valor"))
     comprovante.data_hora = data_hora(dados.get("data_hora"))
+    if dados.get("e_anotacao") and comprovante.data_hora:
+        # O bilhete so traz a data; a hora e a do envio.
+        agora = timezone.localtime(timezone.now())
+        comprovante.data_hora = timezone.localtime(comprovante.data_hora).replace(
+            hour=agora.hour, minute=agora.minute, second=agora.second, microsecond=0
+        )
     # Sem espaco nem quebra de linha: o PDF do PicPay quebra o ID em duas
     # linhas, e a leitura pode trazer o pedaco com ou sem espaco.
     comprovante.id_transacao = re.sub(r"\s+", "", dados.get("id_transacao") or "")[:64] or None
@@ -123,10 +130,13 @@ def _aplicar_leitura(comprovante, dados, loja_escolhida):
 
 
 def _situacao(comprovante, dados, recebido):
+    # Bilhete a mao de pagamento em dinheiro: com valor e data legiveis entra
+    # direto; sem eles fica em duvida, com o aviso de que e anotacao.
+    prefixo = "Anotação à mão: n" if dados.get("e_anotacao") else "N"
     if comprovante.valor is None:
-        return "Não deu para ler o valor.", CONFERIR
+        return f"{prefixo}ão deu para ler o valor.", CONFERIR
     if comprovante.data_hora is None:
-        return "Não deu para ler a data.", CONFERIR
+        return f"{prefixo}ão deu para ler a data.", CONFERIR
     if recebido:
         return "Parece Pix recebido: o dinheiro entrou na loja.", CONFERIR
     return "", OK

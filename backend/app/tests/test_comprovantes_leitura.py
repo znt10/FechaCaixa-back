@@ -91,3 +91,11 @@ class SemChaveTests(SimpleTestCase):
     def test_sem_chave_a_leitura_esta_desligada(self):
         with self.assertRaisesMessage(LeituraIndisponivel, "leitura desligada"):
             ler_arquivo(b"x", "image/jpeg")
+
+
+class EsquemaTests(SimpleTestCase):
+    def test_a_leitura_diz_se_e_anotacao_a_mao(self):
+        from app.services.comprovantes.leitura import ESQUEMA, PROMPT
+
+        self.assertIn("e_anotacao", ESQUEMA["required"])
+        self.assertIn("à mão", PROMPT)
