@@ -40,6 +40,12 @@ from .views.pluggy import (
     TestarConexaoPluggyView,
     VincularContasPluggyView,
 )
+from .views.acessos import (
+    AcessosDaEmpresaView,
+    AcessosView,
+    GerentesDaEmpresaView,
+    ReenviarLinkView,
+)
 from .views.plataforma import (
     ConfirmarPagamentoView,
     EmpresaDaPlataformaView,
@@ -175,6 +181,22 @@ urlpatterns = router.urls + [
         "plataforma/pluggy/<uuid:public_id>/buscar/",
         BuscarConexaoPluggyView.as_view(),
         name="plataforma-pluggy-buscar",
+    ),
+    path("plataforma/acessos/", AcessosView.as_view(), name="plataforma-acessos"),
+    path(
+        "plataforma/acessos/<uuid:public_id>/",
+        AcessosDaEmpresaView.as_view(),
+        name="plataforma-acessos-empresa",
+    ),
+    path(
+        "plataforma/acessos/<uuid:public_id>/gerentes/",
+        GerentesDaEmpresaView.as_view(),
+        name="plataforma-acessos-gerentes",
+    ),
+    path(
+        "plataforma/acessos/<uuid:public_id>/gerentes/<int:user_id>/reenviar-link/",
+        ReenviarLinkView.as_view(),
+        name="plataforma-acessos-reenviar-link",
     ),
     path("plataforma/empresas/", EmpresasDaPlataformaView.as_view(), name="plataforma-empresas"),
     path(
