@@ -699,10 +699,12 @@ class FechamentoCaixaCreateSerializer(serializers.ModelSerializer):
         ]
         extra_kwargs = {"data": {"required": False}}
 
-    # Ate quantos dias para tras o painel repoe um dia esquecido. Passado
-    # isso o caixa daquele dia ja virou relatorio fechado, e mexer nele deixa
-    # de ser "a loja esqueceu ontem" para virar reescrita de historico.
-    DIAS_PARA_REPOR = 30
+    # Ate quantos dias para tras o painel (empresa/gerente) repoe um dia
+    # esquecido: seis meses. Passado isso o caixa daquele dia ja virou
+    # relatorio fechado, e mexer nele deixa de ser correcao para virar
+    # reescrita de historico. O front tem o mesmo numero em
+    # features/admin/reposicao-de-fechamento.ts — mudar os dois juntos.
+    DIAS_PARA_REPOR = 180
 
     def validate_data(self, value):
         # O endpoint e publico: sem isto, qualquer um lanca caixa de 2030 e
