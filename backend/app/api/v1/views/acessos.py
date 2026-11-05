@@ -23,12 +23,15 @@ from app.services.acessos import (
 
 from .plataforma import DaPlataforma
 
-# O nome na tela -> o campo da empresa. So o que a empresa contrata: o resto
-# (catalogo, boletos...) o proprio gerente liga na tela Empresa.
+# O nome na tela -> o campo da empresa. O que a empresa contrata, mais a tela
+# CPF; o resto (catalogo, boletos...) o proprio gerente liga na tela Empresa.
 MODULOS = {
     "notas": "modulo_notas_ativo",
     "banco": "modulo_banco_ativo",
     "comprovantes": "modulo_comprovantes_ativo",
+    # A tela "Comprovantes CPF". O gerente tambem liga na tela Empresa; aqui
+    # e para o dono ja deixar a empresa nova pronta.
+    "comprovantes_pessoais": "comprovantes_pessoais_ativos",
 }
 
 
@@ -36,6 +39,7 @@ class ModulosSerializer(serializers.Serializer):
     notas = serializers.BooleanField(required=False)
     banco = serializers.BooleanField(required=False)
     comprovantes = serializers.BooleanField(required=False)
+    comprovantes_pessoais = serializers.BooleanField(required=False)
 
 
 class NovoGerenteSerializer(serializers.Serializer):
