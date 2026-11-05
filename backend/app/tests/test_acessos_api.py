@@ -86,7 +86,8 @@ class AcessosApiTests(TestCase):
             [("Bia", "ATIVO"), ("Caio", "AGUARDANDO_SENHA"), ("Davi", "DESATIVADO")],
         )
         self.assertEqual(
-            empresa["modulos"], {"notas": False, "banco": False, "comprovantes": False}
+            empresa["modulos"],
+            {"notas": False, "banco": False, "comprovantes": False, "comprovantes_pessoais": False},
         )
 
     def test_lista_so_mostra_gerentes(self):
@@ -156,3 +157,35 @@ class AcessosApiTests(TestCase):
             api.post(f"{LISTA}{conta.public_id}/gerentes/{gerente.id}/reenviar-link/"),
         ]
         self.assertEqual([r.status_code for r in chamadas], [403] * 5)
+
+
+class ComprovantesPessoaisNaAcessosTests(TestCase):
+    """A chave do CPF tambem fica na Acessos, embaixo de Comprovantes."""
+
+    def setUp(self):
+        self.dono = User.objects.create_superuser(username="dono", password="x")
+        self.api = APIClient()
+        self.api.force_authenticate(self.dono)
+
+    def test_liga_os_pessoais_pela_acessos(self):
+        conta = Conta.objects.create(nome="Padaria", modulo_comprovantes_ativo=True)
+        resposta = self.api.patch(
+            f"{LISTA}{conta.public_id}/", {"comprovantes_pessoais": True}, format="json"
+        )
+        self.assertEqual(resposta.status_code, 200, resposta.data)
+        conta.refresh_from_db()
+        self.assertTrue(conta.comprovantes_pessoais_ativos)
+        self.assertIs(resposta.data["modulos"]["comprovantes_pessoais"], True)
+
+    def test_nova_empresa_ja_com_os_pessoais(self):
+        resposta = self.api.post(
+            LISTA,
+            {
+                "nome": "Nova",
+                "modulos": {"comprovantes": True, "comprovantes_pessoais": True},
+                "gerente": {"nome": "Ana", "email": "ana@x.com", "senha": "segredo1"},
+            },
+            format="json",
+        )
+        self.assertEqual(resposta.status_code, 201, resposta.data)
+        self.assertTrue(Conta.objects.get(nome="Nova").comprovantes_pessoais_ativos)
